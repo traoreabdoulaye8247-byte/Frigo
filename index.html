@@ -1,0 +1,2444 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0B1120">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FRIGO">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<title>FRIGO — Gestion Boissons</title>
+<style>
+/* ============================================================
+   FRIGO — Identité visuelle
+   Inspiré du froid, du givre, des canettes alignées.
+   Palette : nuit glaciale + accent ambre (comme une boisson)
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root{
+  --nuit:#0B1120;
+  --nuit-2:#131C2E;
+  --ardoise:#1B2638;
+  --ardoise-2:#243349;
+  --givre:#5EEAD4;
+  --givre-fonce:#0D9488;
+  --ambre:#FBBF24;
+  --ambre-fonce:#D97706;
+  --texte:#E8EEF6;
+  --texte-doux:#94A3B8;
+  --texte-faible:#5A6B82;
+  --rouge:#F87171;
+  --vert:#4ADE80;
+  --orange:#FB923C;
+  --bord:#2A384E;
+  --r:16px;
+  --r-s:11px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--nuit);
+  color:var(--texte);
+  font-size:15px;
+  line-height:1.5;
+  overflow-x:hidden;
+}
+body.no-scroll{overflow:hidden}
+
+/* ---------- ÉCRAN DE CONNEXION ---------- */
+#login{
+  position:fixed;inset:0;z-index:100;
+  display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(94,234,212,0.10), transparent 60%),
+    linear-gradient(180deg,#0B1120 0%, #0E1626 100%);
+  padding:24px;
+}
+.login-card{
+  width:100%;max-width:380px;
+  background:linear-gradient(180deg,var(--nuit-2),var(--ardoise));
+  border:1px solid var(--bord);
+  border-radius:24px;
+  padding:40px 30px;
+  box-shadow:0 30px 80px rgba(0,0,0,.5);
+}
+.brand{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:30px}
+.brand-logo{
+  width:64px;height:64px;border-radius:20px;
+  display:grid;place-items:center;font-size:32px;
+  background:linear-gradient(145deg,var(--givre-fonce),var(--givre));
+  box-shadow:0 12px 30px rgba(94,234,212,.3);
+  transform:rotate(-6deg);
+}
+.brand h1{font-family:'Sora';font-weight:800;font-size:26px;letter-spacing:-.5px;margin-top:8px}
+.brand p{color:var(--texte-doux);font-size:13px;font-weight:500}
+
+/* ---------- COMPOSANTS ---------- */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--texte-doux);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px}
+.input{
+  width:100%;padding:14px 16px;
+  background:var(--nuit);
+  border:1.5px solid var(--bord);
+  border-radius:var(--r-s);
+  color:var(--texte);font-size:16px;font-family:inherit;
+  transition:border-color .15s, box-shadow .15s;
+}
+.input:focus{outline:none;border-color:var(--givre);box-shadow:0 0 0 3px rgba(94,234,212,.12)}
+.input::placeholder{color:var(--texte-faible)}
+select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%2394A3B8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:40px}
+
+.btn{
+  width:100%;padding:14px 18px;border:none;border-radius:var(--r-s);
+  font-family:'Sora';font-weight:700;font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform .12s, filter .15s, background .15s;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(145deg,var(--givre-fonce),var(--givre));color:#06231F}
+.btn-primary:hover{filter:brightness(1.06)}
+.btn-ambre{background:linear-gradient(145deg,var(--ambre-fonce),var(--ambre));color:#3A2400}
+.btn-ghost{background:var(--ardoise-2);color:var(--texte)}
+.btn-danger{background:linear-gradient(145deg,#B91C1C,var(--rouge));color:#fff}
+.btn-sm{width:auto;padding:9px 14px;font-size:13px;border-radius:9px}
+
+/* ---------- LAYOUT APP ---------- */
+#app{display:none;min-height:100vh;padding-bottom:88px}
+.topbar{
+  position:sticky;top:0;z-index:40;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 18px;
+  background:rgba(11,17,32,.82);
+  backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--bord);
+}
+.topbar .tb-left{display:flex;align-items:center;gap:11px}
+.tb-logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:20px;
+  background:linear-gradient(145deg,var(--givre-fonce),var(--givre));transform:rotate(-6deg)}
+.tb-title{font-family:'Sora';font-weight:700;font-size:16px;line-height:1.1}
+.tb-sub{font-size:11px;color:var(--texte-doux)}
+.tb-date{font-family:'JetBrains Mono';font-size:12px;color:var(--givre);font-weight:700;
+  background:rgba(94,234,212,.08);padding:6px 11px;border-radius:9px;border:1px solid rgba(94,234,212,.18)}
+
+.page{padding:18px;max-width:760px;margin:0 auto;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.page-title{font-family:'Sora';font-weight:800;font-size:23px;letter-spacing:-.5px;margin-bottom:4px}
+.page-sub{color:var(--texte-doux);font-size:13px;margin-bottom:20px}
+
+/* ---------- CARTES MÉTRIQUES ---------- */
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:18px}
+.metric{
+  background:linear-gradient(160deg,var(--nuit-2),var(--ardoise));
+  border:1px solid var(--bord);border-radius:var(--r);
+  padding:16px;position:relative;overflow:hidden;
+}
+.metric::after{content:"";position:absolute;right:-20px;top:-20px;width:70px;height:70px;
+  border-radius:50%;background:radial-gradient(circle,rgba(94,234,212,.10),transparent 70%)}
+.metric .m-label{font-size:11px;color:var(--texte-doux);text-transform:uppercase;
+  letter-spacing:.7px;font-weight:600;margin-bottom:6px}
+.metric .m-value{font-family:'Sora';font-weight:800;font-size:21px;letter-spacing:-.5px}
+.metric .m-value.mono{font-family:'JetBrains Mono';font-size:19px}
+.metric.accent{border-color:rgba(94,234,212,.35)}
+.metric.accent .m-value{color:var(--givre)}
+.metric.gold{border-color:rgba(251,191,36,.35)}
+.metric.gold .m-value{color:var(--ambre)}
+.metric.danger .m-value{color:var(--rouge)}
+
+/* ---------- CARTE GÉNÉRIQUE ---------- */
+.card{background:linear-gradient(160deg,var(--nuit-2),var(--ardoise));
+  border:1px solid var(--bord);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.card-title{font-family:'Sora';font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
+
+/* ---------- LISTE CATÉGORIES (inventaire) ---------- */
+.cat-row{
+  display:flex;align-items:center;gap:12px;
+  padding:13px 14px;border-radius:var(--r-s);
+  background:var(--nuit);border:1px solid var(--bord);
+  margin-bottom:9px;
+}
+.cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.cat-info{flex:1;min-width:0}
+.cat-name{font-weight:600;font-size:15px}
+.cat-meta{font-size:12px;color:var(--texte-doux);font-family:'JetBrains Mono'}
+.cat-input{
+  width:84px;padding:11px;text-align:center;
+  background:var(--ardoise-2);border:1.5px solid var(--bord);
+  border-radius:9px;color:var(--texte);font-size:17px;font-weight:700;
+  font-family:'JetBrains Mono';
+}
+.cat-input:focus{outline:none;border-color:var(--givre)}
+
+/* ---------- TABLE ---------- */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;
+  letter-spacing:.5px;color:var(--texte-doux);border-bottom:1px solid var(--bord);font-weight:600}
+.tbl td{padding:11px 12px;border-bottom:1px solid rgba(42,56,78,.5)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl .num{font-family:'JetBrains Mono';text-align:right;font-weight:600}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  font-size:11px;font-weight:700;font-family:'JetBrains Mono'}
+.pill.ok{background:rgba(74,222,128,.13);color:var(--vert)}
+.pill.low{background:rgba(251,146,60,.13);color:var(--orange)}
+.pill.out{background:rgba(248,113,113,.13);color:var(--rouge)}
+
+.empty{text-align:center;padding:40px 20px;color:var(--texte-faible)}
+.empty .e-ic{font-size:40px;margin-bottom:10px;opacity:.5}
+
+/* ---------- BARRE NAV BAS ---------- */
+.navbar{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  display:flex;justify-content:space-around;
+  background:rgba(11,17,32,.92);backdrop-filter:blur(20px);
+  border-top:1px solid var(--bord);
+  padding:8px 4px calc(8px + env(safe-area-inset-bottom));
+}
+.nav-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 2px;border:none;background:none;cursor:pointer;
+  color:var(--texte-faible);transition:color .15s;border-radius:10px;
+}
+.nav-item .ni-ic{font-size:21px;line-height:1}
+.nav-item .ni-lb{font-size:10px;font-weight:600;letter-spacing:.2px}
+.nav-item.active{color:var(--givre)}
+.nav-item.active .ni-ic{transform:translateY(-1px)}
+
+/* ---------- FAB ---------- */
+.fab{position:fixed;right:18px;bottom:96px;z-index:45;
+  width:58px;height:58px;border-radius:18px;border:none;cursor:pointer;
+  background:linear-gradient(145deg,var(--ambre-fonce),var(--ambre));
+  color:#3A2400;font-size:28px;font-weight:700;
+  box-shadow:0 12px 30px rgba(251,191,36,.35);
+  display:grid;place-items:center;transition:transform .15s}
+.fab:active{transform:scale(.9)}
+
+/* ---------- MODAL / SHEET ---------- */
+.sheet-bg{position:fixed;inset:0;z-index:60;background:rgba(5,9,18,.7);
+  backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center}
+.sheet-bg.show{display:flex}
+.sheet{width:100%;max-width:560px;max-height:90vh;overflow-y:auto;
+  background:linear-gradient(180deg,var(--nuit-2),var(--ardoise));
+  border:1px solid var(--bord);border-bottom:none;
+  border-radius:24px 24px 0 0;padding:8px 20px 28px;
+  animation:slideUp .28s cubic-bezier(.2,.9,.3,1)}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+.sheet-handle{width:40px;height:4px;background:var(--bord);border-radius:3px;margin:8px auto 18px}
+.sheet h2{font-family:'Sora';font-weight:700;font-size:19px;margin-bottom:4px}
+.sheet .s-sub{color:var(--texte-doux);font-size:13px;margin-bottom:20px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn-group{display:flex;gap:10px;margin-top:8px}
+
+/* ---------- TOAST ---------- */
+.toast{position:fixed;left:50%;bottom:170px;transform:translateX(-50%) translateY(20px);
+  z-index:90;padding:13px 20px;border-radius:13px;font-weight:600;font-size:14px;
+  background:var(--ardoise-2);border:1px solid var(--bord);color:var(--texte);
+  box-shadow:0 16px 40px rgba(0,0,0,.4);opacity:0;pointer-events:none;
+  transition:opacity .25s, transform .25s;max-width:90%;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{border-color:var(--givre-fonce)}
+.toast.err{border-color:var(--rouge)}
+
+/* segmented */
+.seg{display:flex;background:var(--nuit);border:1px solid var(--bord);
+  border-radius:11px;padding:4px;gap:4px;margin-bottom:16px}
+.seg button{flex:1;padding:9px;border:none;background:none;color:var(--texte-doux);
+  font-weight:600;font-size:13px;border-radius:8px;cursor:pointer;font-family:inherit}
+.seg button.on{background:var(--givre-fonce);color:#06231F}
+
+.divider{height:1px;background:var(--bord);margin:16px 0}
+.hint{font-size:12px;color:var(--texte-faible);margin-top:6px}
+.big-total{font-family:'Sora';font-weight:800;font-size:28px;color:var(--givre);
+  font-feature-settings:'tnum';letter-spacing:-1px}
+.swipe-x{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.chip{white-space:nowrap;padding:7px 13px;border-radius:20px;font-size:13px;font-weight:600;
+  background:var(--ardoise-2);border:1px solid var(--bord);color:var(--texte-doux);cursor:pointer}
+.chip.on{background:var(--givre-fonce);color:#06231F;border-color:transparent}
+
+@media(min-width:600px){.metrics{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<!-- Le contenu et le script seront injectés -->
+<div id="login"></div>
+<div id="app"></div>
+<div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+
+/* ===== engine.js ===== */
+/* ============================================================
+   FRIGO — Moteur de gestion (logique métier réelle)
+   ============================================================
+   PRINCIPE :
+   - ACHAT : détail produit (carton × contenu + prix global facture)
+   - STOCK : compté par CATÉGORIE (prix de vente fixe)
+   - VENTE : déduite = (stock_avant + achats) − stock_compté
+   ============================================================ */
+
+const DB_KEY = 'frigo_db_v1';
+const PIN_KEY = 'frigo_pin';
+
+// ---------- Catégories par défaut (vos prix réels) ----------
+const CAT_DEFAUT = [
+  { id: 'grand',  nom: 'Grand Canette',  prix: 500, couleur: '#5EEAD4' },
+  { id: 'petit',  nom: 'Petit Canette',  prix: 300, couleur: '#60A5FA' },
+  { id: 'iragrand',nom: 'IRA Grand',     prix: 600, couleur: '#A78BFA' },
+  { id: 'irapetit',nom: 'IRA Petit',     prix: 350, couleur: '#C4B5FD' },
+  { id: 'bramali',nom: 'Bramali',        prix: 200, couleur: '#FBBF24' },
+  { id: 'paps',   nom: "Pap's Soda",     prix: 200, couleur: '#FB923C' },
+  { id: 'juspp',  nom: 'Jus PP',         prix: 200, couleur: '#F472B6' },
+  { id: 'diago',  nom: 'Diago',          prix: 400, couleur: '#34D399' },
+  { id: 'perfect',nom: 'Perfect',        prix: 150, couleur: '#FACC15' },
+];
+
+// ---------- État global ----------
+let DB = null;
+
+function dbVide(){
+  return {
+    categories: JSON.parse(JSON.stringify(CAT_DEFAUT)),
+    produits: [],      // {id, nom, categorieId}
+    stockDepart: null, // {date, lignes:{catId: quantite}}  — stock initial
+    achats: [],        // {id, date, fournisseurId, fournisseur, produit, categorieId, cartons, contenu, quantite, prixGlobal, prixUnitaire, montantPaye}
+    fournisseurs: [],  // {id, nom, tel}
+    paiements: [],     // {id, date, fournisseurId, achatId, montant, note}
+    soldeDepartCaisse: 0, // argent déjà en caisse au démarrage
+    inventaires: [],   // {id, date, lignes:[{categorieId, stockAvant, achats, compte, vendu, prix, montant}], totalCA}
+    depenses: [],      // {id, date, motif, montant}
+    versements: [],    // {id, date, montant, note}  (argent remis par le vendeur)
+    parametres: { boutique: 'Mon Frigo', devise: 'F' },
+  };
+}
+
+function chargerDB(){
+  let principal = null, secours = null;
+  try{ principal = localStorage.getItem(DB_KEY); }catch(e){}
+  try{ secours = localStorage.getItem(DB_KEY + '_backup'); }catch(e){}
+
+  // Si le principal est vide/corrompu mais qu'une sauvegarde existe → on récupère
+  let source = principal;
+  if((!principal || principal === 'null') && secours){
+    source = secours;
+    window._donneesRecuperees = true;   // signal pour prévenir l'utilisateur
+  }
+
+  try{
+    DB = source ? JSON.parse(source) : dbVide();
+  }catch(e){
+    // JSON corrompu → essayer la copie de secours
+    try{ DB = secours ? JSON.parse(secours) : dbVide(); }
+    catch(e2){ DB = dbVide(); }
+  }
+  // migration douce : champs manquants
+  if(!DB.categories) DB.categories = JSON.parse(JSON.stringify(CAT_DEFAUT));
+  if(!DB.produits) DB.produits = [];
+  if(!('stockDepart' in DB)) DB.stockDepart = null;
+  if(!DB.achats) DB.achats = [];
+  if(!DB.fournisseurs) DB.fournisseurs = [];
+  if(!DB.paiements) DB.paiements = [];
+  if(!('soldeDepartCaisse' in DB)) DB.soldeDepartCaisse = 0;
+  if(!DB.inventaires) DB.inventaires = [];
+  if(!DB.depenses) DB.depenses = [];
+  if(!DB.versements) DB.versements = [];
+  if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
+}
+
+function sauverDB(){
+  const data = JSON.stringify(DB);
+  try{
+    localStorage.setItem(DB_KEY, data);
+    // Copie de secours (2e emplacement) + horodatage
+    localStorage.setItem(DB_KEY + '_backup', data);
+    localStorage.setItem(DB_KEY + '_time', new Date().toISOString());
+  }catch(e){
+    console.warn('Erreur sauvegarde', e);
+  }
+}
+
+/* Demander à Android/navigateur de NE PAS effacer nos données */
+async function demanderPersistance(){
+  try{
+    if(navigator.storage && navigator.storage.persist){
+      const dejaPersistant = await navigator.storage.persisted();
+      if(!dejaPersistant){
+        await navigator.storage.persist();
+      }
+    }
+  }catch(e){ /* ignoré */ }
+}
+
+function uid(p='id'){ return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+// ---------- Helpers format ----------
+function fmt(n){ return Math.round(n||0).toLocaleString('fr-FR'); }
+function fmtF(n){ return fmt(n) + ' ' + DB.parametres.devise; }
+function auj(){ return new Date().toISOString().slice(0,10); }
+function dateFr(iso){ if(!iso) return ''; const [a,m,j]=iso.split('-'); return `${j}/${m}/${a}`; }
+
+// ============================================================
+//  MOTEUR DE CALCUL DU STOCK PAR CATÉGORIE
+// ============================================================
+
+/* Stock théorique actuel d'une catégorie =
+   stock de départ + somme des achats − somme des ventes déduites */
+function stockCategorie(catId){
+  let entrees = 0;
+  // stock de départ
+  if(DB.stockDepart && DB.stockDepart.lignes && (catId in DB.stockDepart.lignes)){
+    entrees += Number(DB.stockDepart.lignes[catId])||0;
+  }
+  // achats
+  for(const a of DB.achats){
+    if(a.categorieId === catId) entrees += a.quantite;
+  }
+  let sorties = 0;
+  for(const inv of DB.inventaires){
+    for(const l of inv.lignes){
+      if(l.categorieId === catId) sorties += l.vendu;
+    }
+  }
+  return entrees - sorties;
+}
+
+/* Coût moyen unitaire (PMP) d'une catégorie — utilisé seulement pour la valeur du stock.
+   Le stock de départ est valorisé au coût d'achat saisi, sinon 0 (déjà payé avant). */
+function coutMoyenCategorie(catId){
+  let qte = 0, valeur = 0;
+  if(DB.stockDepart && DB.stockDepart.lignes && (catId in DB.stockDepart.lignes)){
+    const q = Number(DB.stockDepart.lignes[catId])||0;
+    if(q > 0){
+      const coutDep = (DB.stockDepart.couts && DB.stockDepart.couts[catId])
+        ? Number(DB.stockDepart.couts[catId]) : 0;
+      qte += q;
+      valeur += q * coutDep;
+    }
+  }
+  for(const a of DB.achats){
+    if(a.categorieId === catId){
+      qte += a.quantite;
+      valeur += a.prixGlobal;
+    }
+  }
+  return qte > 0 ? valeur / qte : 0;
+}
+
+/* Définir ou modifier le stock de départ */
+function definirStockDepart(lignes, couts){
+  const dateOrig = (DB.stockDepart && DB.stockDepart.date) ? DB.stockDepart.date : auj();
+  DB.stockDepart = {
+    date: dateOrig,                 // on garde la date d'origine lors d'une modification
+    modifie: DB.stockDepart ? auj() : null,
+    lignes: lignes || {},
+    couts: couts || {}
+  };
+  sauverDB();
+  return DB.stockDepart;
+}
+
+/* Supprimer complètement le stock de départ */
+function supprimerStockDepart(){
+  DB.stockDepart = null;
+  sauverDB();
+}
+
+/* Achats reçus pour une catégorie depuis le dernier inventaire */
+function achatsDepuisDernierInventaire(catId){
+  // dernier inventaire (par date puis ordre d'ajout)
+  if(DB.inventaires.length === 0){
+    // tous les achats comptent
+    return DB.achats.filter(a=>a.categorieId===catId).reduce((s,a)=>s+a.quantite,0);
+  }
+  const dernier = DB.inventaires[DB.inventaires.length-1];
+  const dateRef = dernier.date;
+  let q = 0;
+  for(const a of DB.achats){
+    if(a.categorieId===catId && a.date >= dateRef) q += a.quantite;
+  }
+  return q;
+}
+
+// ============================================================
+//  CRÉATION D'UN ACHAT
+// ============================================================
+function trouverOuCreerFournisseur(nom){
+  const n = (nom||'').trim();
+  if(!n) return null;
+  let f = DB.fournisseurs.find(x=>x.nom.toUpperCase()===n.toUpperCase());
+  if(!f){
+    f = { id: uid('four'), nom: n, tel: '' };
+    DB.fournisseurs.push(f);
+  }
+  return f;
+}
+
+function ajouterAchat({date, fournisseur, produitNom, categorieId, cartons, contenu, prixGlobal, montantPaye}){
+  cartons = Number(cartons)||0;
+  contenu = Number(contenu)||0;
+  prixGlobal = Number(prixGlobal)||0;
+  montantPaye = Number(montantPaye)||0;
+  const quantite = cartons * contenu;
+  const prixUnitaire = quantite>0 ? prixGlobal/quantite : 0;
+
+  // créer le produit s'il n'existe pas
+  let prod = DB.produits.find(p=>p.nom.toUpperCase()===produitNom.trim().toUpperCase());
+  if(!prod){
+    prod = { id: uid('prod'), nom: produitNom.trim(), categorieId };
+    DB.produits.push(prod);
+  } else {
+    prod.categorieId = categorieId;
+  }
+
+  // fournisseur
+  const f = trouverOuCreerFournisseur(fournisseur);
+
+  const achat = {
+    id: uid('ach'), date, fournisseurId: f ? f.id : null, fournisseur: f ? f.nom : '',
+    produit: prod.nom, categorieId, cartons, contenu, quantite,
+    prixGlobal, prixUnitaire, montantPaye: 0
+  };
+  DB.achats.push(achat);
+
+  // paiement initial (si payé à l'achat, total ou partiel)
+  if(montantPaye > 0 && f){
+    enregistrerPaiement({date, fournisseurId: f.id, achatId: achat.id, montant: Math.min(montantPaye, prixGlobal), note: 'Paiement a l achat'});
+  } else if(montantPaye > 0 && !f){
+    // pas de fournisseur nommé mais payé → juste marquer payé
+    achat.montantPaye = Math.min(montantPaye, prixGlobal);
+  }
+
+  sauverDB();
+  return achat;
+}
+
+// Modifier un achat existant
+function modifierAchat(id, {date, fournisseur, produitNom, categorieId, cartons, contenu, prixGlobal}){
+  const a = DB.achats.find(x=>x.id===id);
+  if(!a) return null;
+  cartons = Number(cartons)||0;
+  contenu = Number(contenu)||0;
+  prixGlobal = Number(prixGlobal)||0;
+  const quantite = cartons * contenu;
+  // produit
+  let prod = DB.produits.find(p=>p.nom.toUpperCase()===produitNom.trim().toUpperCase());
+  if(!prod){
+    prod = { id: uid('prod'), nom: produitNom.trim(), categorieId };
+    DB.produits.push(prod);
+  } else {
+    prod.categorieId = categorieId;
+  }
+  a.date = date;
+  const f = trouverOuCreerFournisseur(fournisseur);
+  a.fournisseurId = f ? f.id : null;
+  a.fournisseur = f ? f.nom : '';
+  a.produit = prod.nom;
+  a.categorieId = categorieId;
+  a.cartons = cartons;
+  a.contenu = contenu;
+  a.quantite = quantite;
+  a.prixGlobal = prixGlobal;
+  a.prixUnitaire = quantite>0 ? prixGlobal/quantite : 0;
+  sauverDB();
+  return a;
+}
+
+// Supprimer un achat (et ses paiements liés)
+function supprimerAchat(id){
+  DB.achats = DB.achats.filter(a=>a.id!==id);
+  DB.paiements = DB.paiements.filter(p=>p.achatId!==id);
+  sauverDB();
+}
+
+// ============================================================
+//  FOURNISSEURS & PAIEMENTS (comptes fournisseurs)
+// ============================================================
+
+/* Enregistrer un paiement à un fournisseur.
+   Si achatId fourni → impute sur cet achat en priorité.
+   Sinon → impute sur les achats les plus anciens non soldés (FIFO). */
+function enregistrerPaiement({date, fournisseurId, achatId, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0 || !fournisseurId) return null;
+  const paiement = { id: uid('pay'), date: date||auj(), fournisseurId, achatId: achatId||null, montant, note: note||'' };
+  DB.paiements.push(paiement);
+
+  // Imputation sur les achats
+  let reste = montant;
+  // 1. si achat précis, on l'impute d'abord
+  if(achatId){
+    const a = DB.achats.find(x=>x.id===achatId);
+    if(a){
+      const du = a.prixGlobal - (a.montantPaye||0);
+      const p = Math.min(reste, du);
+      a.montantPaye = (a.montantPaye||0) + p;
+      reste -= p;
+    }
+  }
+  // 2. le reste va sur les autres achats du fournisseur (du plus ancien au plus récent)
+  if(reste > 0){
+    const achatsFour = DB.achats
+      .filter(a=>a.fournisseurId===fournisseurId && (a.prixGlobal-(a.montantPaye||0))>0)
+      .sort((a,b)=> a.date<b.date?-1:1);
+    for(const a of achatsFour){
+      if(reste<=0) break;
+      const du = a.prixGlobal - (a.montantPaye||0);
+      const p = Math.min(reste, du);
+      a.montantPaye = (a.montantPaye||0) + p;
+      reste -= p;
+    }
+  }
+  sauverDB();
+  return paiement;
+}
+
+/* Solde dû à un fournisseur = total achats − total payé */
+function soldeFournisseur(fournisseurId){
+  let du = 0;
+  for(const a of DB.achats){
+    if(a.fournisseurId===fournisseurId) du += a.prixGlobal - (a.montantPaye||0);
+  }
+  return du;
+}
+
+/* Infos complètes d'un fournisseur */
+function infosFournisseur(fournisseurId){
+  const f = DB.fournisseurs.find(x=>x.id===fournisseurId);
+  if(!f) return null;
+  const achats = DB.achats.filter(a=>a.fournisseurId===fournisseurId);
+  const paiements = DB.paiements.filter(p=>p.fournisseurId===fournisseurId);
+  const totalAchats = achats.reduce((s,a)=>s+a.prixGlobal,0);
+  const totalPaye = achats.reduce((s,a)=>s+(a.montantPaye||0),0);
+  return {
+    ...f,
+    nbAchats: achats.length,
+    totalAchats, totalPaye,
+    solde: totalAchats - totalPaye,
+    achats, paiements
+  };
+}
+
+/* Total dû à tous les fournisseurs */
+function totalDettesFournisseurs(){
+  return DB.fournisseurs.reduce((s,f)=>s+soldeFournisseur(f.id),0);
+}
+
+// Supprimer un paiement (annule l'imputation)
+function supprimerPaiement(id){
+  const p = DB.paiements.find(x=>x.id===id);
+  if(!p) return;
+  // ré-imputer à l'envers : on retire le montant des achats de ce fournisseur (du plus récent payé)
+  let reste = p.montant;
+  const achatsFour = DB.achats
+    .filter(a=>a.fournisseurId===p.fournisseurId && (a.montantPaye||0)>0)
+    .sort((a,b)=> a.date<b.date?1:-1);  // du plus récent
+  for(const a of achatsFour){
+    if(reste<=0) break;
+    const retire = Math.min(reste, a.montantPaye||0);
+    a.montantPaye -= retire;
+    reste -= retire;
+  }
+  DB.paiements = DB.paiements.filter(x=>x.id!==id);
+  sauverDB();
+}
+
+// ============================================================
+//  GESTION DES PRODUITS (contenu des catégories)
+// ============================================================
+
+/* Retourne les produits d'une catégorie, avec leurs infos mémorisées */
+function produitsParCategorie(catId){
+  return DB.produits.filter(p=>p.categorieId===catId).map(p=>{
+    // dernier achat de ce produit → prix/carton habituels
+    const achatsProd = DB.achats.filter(a=>a.produit.toUpperCase()===p.nom.toUpperCase());
+    const dernier = achatsProd.length ? achatsProd[achatsProd.length-1] : null;
+    const nbAchats = achatsProd.length;
+    return {
+      ...p,
+      dernierPrix: dernier ? dernier.prixGlobal : null,
+      dernierCartons: dernier ? dernier.cartons : null,
+      dernierContenu: dernier ? dernier.contenu : 24,
+      nbAchats
+    };
+  });
+}
+
+/* Infos mémorisées d'un produit (pour resaisie rapide) */
+function memoProduit(nom){
+  const p = DB.produits.find(x=>x.nom.toUpperCase()===nom.trim().toUpperCase());
+  if(!p) return null;
+  const achatsProd = DB.achats.filter(a=>a.produit.toUpperCase()===nom.trim().toUpperCase());
+  const dernier = achatsProd.length ? achatsProd[achatsProd.length-1] : null;
+  return {
+    categorieId: p.categorieId,
+    dernierPrix: dernier ? dernier.prixGlobal : null,
+    dernierCartons: dernier ? dernier.cartons : null,
+    dernierContenu: dernier ? dernier.contenu : 24
+  };
+}
+
+/* Produits les plus fréquents (pour boutons rapides) */
+function produitsFrequents(limite=6){
+  const compte = {};
+  for(const a of DB.achats){
+    const n = a.produit.toUpperCase();
+    compte[n] = (compte[n]||0) + 1;
+  }
+  return Object.entries(compte)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,limite)
+    .map(([nom])=>{
+      const p = DB.produits.find(x=>x.nom.toUpperCase()===nom);
+      return p ? p.nom : nom;
+    });
+}
+
+/* Renommer un produit (répercuté sur tous les achats) */
+function renommerProduit(id, nouveauNom){
+  const p = DB.produits.find(x=>x.id===id);
+  if(!p) return;
+  const ancien = p.nom;
+  p.nom = nouveauNom.trim();
+  // répercuter sur les achats
+  for(const a of DB.achats){
+    if(a.produit.toUpperCase()===ancien.toUpperCase()) a.produit = p.nom;
+  }
+  sauverDB();
+}
+
+/* Déplacer un produit vers une autre catégorie */
+function deplacerProduit(id, nouvelleCategorieId){
+  const p = DB.produits.find(x=>x.id===id);
+  if(!p) return;
+  p.categorieId = nouvelleCategorieId;
+  // répercuter sur les achats de ce produit
+  for(const a of DB.achats){
+    if(a.produit.toUpperCase()===p.nom.toUpperCase()) a.categorieId = nouvelleCategorieId;
+  }
+  sauverDB();
+}
+
+/* Supprimer un produit (seulement s'il n'a pas d'achats) */
+function supprimerProduit(id){
+  const p = DB.produits.find(x=>x.id===id);
+  if(!p) return {ok:false, msg:'Produit introuvable'};
+  const aDesAchats = DB.achats.some(a=>a.produit.toUpperCase()===p.nom.toUpperCase());
+  if(aDesAchats) return {ok:false, msg:'Ce produit a des achats. Supprimez-les avant.'};
+  DB.produits = DB.produits.filter(x=>x.id!==id);
+  sauverDB();
+  return {ok:true};
+}
+
+// ============================================================
+//  CRÉATION D'UN INVENTAIRE (le coeur du système)
+//  saisies = { catId: stockCompté, ... }
+// ============================================================
+function calculerInventaire(saisies){
+  const lignes = [];
+  let totalCA = 0;
+  for(const cat of DB.categories){
+    if(!(cat.id in saisies)) continue;
+    const compte = Number(saisies[cat.id])||0;
+    const stockAvant = stockCategorie(cat.id);   // théorique actuel (inclut déjà les achats)
+    // Le stock théorique actuel = ce qui devrait être là.
+    // Vendu = théorique - compté physique
+    let vendu = stockAvant - compte;
+    if(vendu < 0) vendu = 0;  // surplus → pas de vente négative
+    const montant = vendu * cat.prix;
+    totalCA += montant;
+    lignes.push({
+      categorieId: cat.id, nom: cat.nom, prix: cat.prix,
+      stockAvant, compte, vendu, montant,
+      surplus: compte > stockAvant ? compte - stockAvant : 0
+    });
+  }
+  return { lignes, totalCA };
+}
+
+function enregistrerInventaire(saisies){
+  const calc = calculerInventaire(saisies);
+  const inv = {
+    id: uid('inv'), date: auj(),
+    heure: new Date().toTimeString().slice(0,5),
+    lignes: calc.lignes, totalCA: calc.totalCA
+  };
+  DB.inventaires.push(inv);
+  sauverDB();
+  return inv;
+}
+
+// Modifier la date d'un inventaire
+function modifierDateInventaire(id, nouvelleDate){
+  const inv = DB.inventaires.find(x=>x.id===id);
+  if(inv){ inv.date = nouvelleDate; sauverDB(); }
+  return inv;
+}
+
+// Supprimer un inventaire (réintègre le stock vendu)
+function supprimerInventaire(id){
+  DB.inventaires = DB.inventaires.filter(i=>i.id!==id);
+  sauverDB();
+}
+
+// ============================================================
+//  STATISTIQUES GLOBALES
+// ============================================================
+function stats(){
+  let totalAchats=0, totalAchatsPayes=0, totalVentes=0, totalDepenses=0, totalVersements=0;
+  for(const a of DB.achats){ totalAchats += a.prixGlobal; totalAchatsPayes += (a.montantPaye||0); }
+  for(const inv of DB.inventaires){
+    for(const l of inv.lignes){ totalVentes += l.montant; }
+  }
+  for(const d of DB.depenses) totalDepenses += d.montant;
+  for(const v of DB.versements) totalVersements += v.montant;
+
+  let valeurStockVente = 0;
+  for(const cat of DB.categories){
+    const stk = stockCategorie(cat.id);
+    if(stk>0) valeurStockVente += stk * cat.prix;
+  }
+
+  const dettesFournisseurs = totalAchats - totalAchatsPayes;
+
+  return {
+    totalAchats, totalAchatsPayes, dettesFournisseurs,
+    totalVentes, totalDepenses, totalVersements,
+    valeurStock: valeurStockVente,
+    resultatCaisse: totalVentes - totalDepenses - totalAchatsPayes,
+    soldeCaisse: soldeCaisse(),
+    ecartVendeur: totalVersements - (totalVentes - totalDepenses)
+  };
+}
+
+// ============================================================
+//  CAISSE (le noyau) — tous les mouvements avec solde
+// ============================================================
+/* Construit la liste chronologique de TOUS les mouvements d'argent :
+   + Ventes (entrées)
+   + Versements vendeur (entrées)
+   − Paiements fournisseurs (sorties)
+   − Dépenses (sorties)
+   Chaque mouvement a un solde cumulé. */
+function mouvementsCaisse(){
+  const mvts = [];
+  // Solde de départ (première ligne, si défini)
+  if(DB.soldeDepartCaisse && DB.soldeDepartCaisse > 0){
+    mvts.push({ date:'0000-00-00', heure:'', type:'depart', sens:'+',
+      libelle:'Solde de départ', montant: DB.soldeDepartCaisse, ref:'depart', fixe:true });
+  }
+  // Ventes (une entrée par inventaire)
+  for(const inv of DB.inventaires){
+    if(inv.totalCA>0){
+      mvts.push({ date: inv.date, heure: inv.heure||'', type:'vente', sens:'+',
+        libelle:'Ventes inventaire', montant: inv.totalCA, ref: inv.id });
+    }
+  }
+  // Versements
+  for(const v of DB.versements){
+    mvts.push({ date: v.date, heure:'', type:'versement', sens:'+',
+      libelle:'Versement'+(v.note?' — '+v.note:''), montant: v.montant, ref: v.id });
+  }
+  // Paiements fournisseurs
+  for(const p of DB.paiements){
+    const f = DB.fournisseurs.find(x=>x.id===p.fournisseurId);
+    mvts.push({ date: p.date, heure:'', type:'paiement', sens:'-',
+      libelle:'Paiement '+(f?f.nom:'fournisseur'), montant: p.montant, ref: p.id });
+  }
+  // Dépenses
+  for(const d of DB.depenses){
+    mvts.push({ date: d.date, heure:'', type:'depense', sens:'-',
+      libelle:'Dépense — '+d.motif, montant: d.montant, ref: d.id });
+  }
+  // Trier par date puis heure (le départ reste en tête avec sa date 0000)
+  mvts.sort((a,b)=>{
+    if(a.date!==b.date) return a.date<b.date?-1:1;
+    return (a.heure||'')<(b.heure||'')?-1:1;
+  });
+  // Calculer le solde cumulé
+  let solde = 0;
+  for(const m of mvts){
+    solde += (m.sens==='+'? m.montant : -m.montant);
+    m.solde = solde;
+  }
+  return mvts;
+}
+
+function soldeCaisse(){
+  const m = mouvementsCaisse();
+  return m.length ? m[m.length-1].solde : 0;
+}
+
+/* Définir le solde de départ de la caisse */
+function definirSoldeDepartCaisse(montant){
+  DB.soldeDepartCaisse = Number(montant)||0;
+  sauverDB();
+}
+
+// ============================================================
+//  COMPARAISON VENDEUR (contrôle de caisse)
+// ============================================================
+/* Logique : le vendeur encaisse les ventes, paie fournisseurs + dépenses,
+   puis verse le reste. On compare ce qu'il DEVRAIT verser à ce qu'il a VERSÉ.
+   Optionnellement sur une période [debut, fin]. */
+function comparaisonVendeur(debut, fin){
+  const dansPeriode = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+
+  let ventes = 0;
+  for(const inv of DB.inventaires){
+    if(dansPeriode(inv.date)) ventes += inv.totalCA;
+  }
+  let fournisseursPayes = 0;
+  for(const p of DB.paiements){
+    if(dansPeriode(p.date)) fournisseursPayes += p.montant;
+  }
+  let depenses = 0;
+  for(const d of DB.depenses){
+    if(dansPeriode(d.date)) depenses += d.montant;
+  }
+  let verse = 0;
+  for(const v of DB.versements){
+    if(dansPeriode(v.date)) verse += v.montant;
+  }
+
+  const duParVendeur = ventes - fournisseursPayes - depenses;
+  const ecart = verse - duParVendeur;  // négatif = manque, positif = surplus
+
+  return {
+    ventes, fournisseursPayes, depenses, verse,
+    duParVendeur, ecart,
+    statut: ecart===0 ? 'ok' : (ecart<0 ? 'manque' : 'surplus')
+  };
+}
+
+// ============================================================
+//  BÉNÉFICE PAR PÉRIODE (marge réelle: vente − coût d'achat)
+// ============================================================
+/* Bénéfice sur une période [debut, fin] (dates ISO incluses).
+   Pour chaque vente d'inventaire dans la période :
+   bénéfice = montant vendu − (quantité vendue × coût moyen d'achat de la catégorie) */
+function beneficePeriode(debut, fin){
+  let ventes = 0, cout = 0;
+  const details = {};
+  for(const inv of DB.inventaires){
+    if(inv.date < debut || inv.date > fin) continue;
+    for(const l of inv.lignes){
+      if(l.vendu<=0) continue;
+      const pmp = coutMoyenCategorie(l.categorieId);
+      const coutLigne = l.vendu * pmp;
+      ventes += l.montant;
+      cout += coutLigne;
+      if(!details[l.categorieId]){
+        const cat = DB.categories.find(c=>c.id===l.categorieId);
+        details[l.categorieId] = { nom: cat?cat.nom:l.nom, vendu:0, ventes:0, cout:0 };
+      }
+      details[l.categorieId].vendu += l.vendu;
+      details[l.categorieId].ventes += l.montant;
+      details[l.categorieId].cout += coutLigne;
+    }
+  }
+  return {
+    ventes, cout, benefice: ventes - cout,
+    details: Object.values(details).map(d=>({...d, benefice: d.ventes - d.cout}))
+  };
+}
+
+/* Raccourcis de périodes */
+function periodeJour(d){ return {debut:d, fin:d}; }
+function periodeSemaine(dateRef){
+  const d = new Date(dateRef);
+  const jour = (d.getDay()+6)%7; // lundi=0
+  const lundi = new Date(d); lundi.setDate(d.getDate()-jour);
+  const dim = new Date(lundi); dim.setDate(lundi.getDate()+6);
+  return { debut: lundi.toISOString().slice(0,10), fin: dim.toISOString().slice(0,10) };
+}
+function periodeMois(dateRef){
+  const d = new Date(dateRef);
+  const debut = new Date(d.getFullYear(), d.getMonth(), 1);
+  const fin = new Date(d.getFullYear(), d.getMonth()+1, 0);
+  return { debut: debut.toISOString().slice(0,10), fin: fin.toISOString().slice(0,10) };
+}
+
+function statutStock(stk){
+  if(stk <= 0) return {pill:'out', label:'Rupture'};
+  if(stk <= 15) return {pill:'low', label:'Faible'};
+  return {pill:'ok', label:'OK'};
+}
+
+/* ===== ui.js ===== */
+/* ============================================================
+   FRIGO — Interface utilisateur
+   ============================================================ */
+
+let PAGE = 'accueil';
+
+// ---------- Helpers DOM ----------
+const $ = s => document.querySelector(s);
+const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
+
+function toast(msg, type='ok'){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(()=>{ t.className = 'toast ' + type; }, 2200);
+}
+
+function sheet(html){
+  $('#sheet').innerHTML = '<div class="sheet-handle"></div>' + html;
+  $('#sheetBg').classList.add('show');
+  document.body.classList.add('no-scroll');
+}
+function closeSheet(){
+  $('#sheetBg').classList.remove('show');
+  document.body.classList.remove('no-scroll');
+}
+$('#sheetBg').addEventListener('click', e=>{ if(e.target.id==='sheetBg') closeSheet(); });
+
+// ============================================================
+//  CONNEXION (PIN simple)
+// ============================================================
+function renderLogin(){
+  const aPin = localStorage.getItem(PIN_KEY);
+  $('#login').innerHTML = `
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-logo">❄️</div>
+        <h1>FRIGO</h1>
+        <p>${aPin ? 'Entrez votre code' : 'Créez votre code'}</p>
+      </div>
+      <div class="field">
+        <label>${aPin ? 'Code PIN' : 'Nouveau code PIN (4 chiffres)'}</label>
+        <input class="input" id="pinInput" type="password" inputmode="numeric"
+          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono'">
+      </div>
+      ${!aPin ? `<div class="field">
+        <label>Confirmez le code</label>
+        <input class="input" id="pinConfirm" type="password" inputmode="numeric"
+          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono'">
+      </div>` : ''}
+      <button class="btn btn-primary" id="loginBtn" style="margin-top:8px">
+        ${aPin ? 'Déverrouiller' : 'Créer mon accès'} →
+      </button>
+    </div>`;
+
+  const inp = $('#pinInput');
+  inp.focus();
+  inp.addEventListener('input', ()=>{ if(inp.value.length===4 && aPin) tryLogin(); });
+
+  $('#loginBtn').addEventListener('click', tryLogin);
+
+  function tryLogin(){
+    const pin = $('#pinInput').value;
+    if(pin.length !== 4){ toast('Le code doit avoir 4 chiffres','err'); return; }
+    if(aPin){
+      if(pin === aPin){ enterApp(); }
+      else { toast('Code incorrect','err'); $('#pinInput').value=''; $('#pinInput').focus(); }
+    } else {
+      const conf = $('#pinConfirm').value;
+      if(pin !== conf){ toast('Les codes ne correspondent pas','err'); return; }
+      localStorage.setItem(PIN_KEY, pin);
+      toast('Accès créé ✓');
+      enterApp();
+    }
+  }
+}
+
+function enterApp(){
+  $('#login').style.display='none';
+  $('#app').style.display='block';
+  renderApp();
+}
+
+// ============================================================
+//  STRUCTURE PRINCIPALE
+// ============================================================
+function renderApp(){
+  const s = DB.parametres;
+  $('#app').innerHTML = `
+    <div class="topbar">
+      <div class="tb-left">
+        <div class="tb-logo">❄️</div>
+        <div>
+          <div class="tb-title">${s.boutique}</div>
+          <div class="tb-sub">Gestion boissons</div>
+        </div>
+      </div>
+      <div class="tb-date">${dateFr(auj())}</div>
+    </div>
+    <div id="pageContent"></div>
+    <button class="fab" id="fab">+</button>
+    <div class="navbar">
+      ${navItem('accueil','🏠','Accueil')}
+      ${navItem('caisse','💰','Caisse')}
+      ${navItem('inventaire','📋','Inventaire')}
+      ${navItem('achats','📥','Achats')}
+      ${navItem('plus','⋯','Plus')}
+    </div>`;
+
+  $('#fab').addEventListener('click', onFab);
+  document.querySelectorAll('.nav-item').forEach(b=>{
+    b.addEventListener('click', ()=> go(b.dataset.page));
+  });
+  go(PAGE);
+}
+
+function navItem(id, ic, lb){
+  return `<button class="nav-item${PAGE===id?' active':''}" data-page="${id}">
+    <span class="ni-ic">${ic}</span><span class="ni-lb">${lb}</span></button>`;
+}
+
+function go(page){
+  PAGE = page;
+  document.querySelectorAll('.nav-item').forEach(b=> b.classList.toggle('active', b.dataset.page===page));
+  const fab = $('#fab');
+  fab.style.display = ['inventaire','achats'].includes(page) ? 'grid' : 'none';
+  const c = $('#pageContent');
+  if(page==='accueil') c.innerHTML = pageAccueil();
+  else if(page==='caisse') { c.innerHTML = pageCaisse(); bindCaisse && bindCaisse(); }
+  else if(page==='inventaire') { c.innerHTML = pageInventaire(); bindInventaire(); }
+  else if(page==='achats') { c.innerHTML = pageAchats(); }
+  else if(page==='stock') c.innerHTML = pageStock();
+  else if(page==='fournisseurs') { c.innerHTML = pageFournisseurs(); bindFournisseurs && bindFournisseurs(); }
+  else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
+  else if(page==='plus') { c.innerHTML = pagePlus(); bindPlus(); }
+}
+
+function onFab(){
+  if(PAGE==='achats') openAchatSheet();
+  else if(PAGE==='inventaire') toast('Saisissez les quantités puis validez');
+}
+
+/* ===== pages.js ===== */
+/* ============================================================
+   FRIGO — Pages
+   ============================================================ */
+
+// ---------- PAGE ACCUEIL (tableau de bord) ----------
+function pageAccueil(){
+  const s = stats();
+  const dernier = DB.inventaires[DB.inventaires.length-1];
+  const caJour = dernier ? dernier.totalCA : 0;
+
+  // alertes stock
+  const alertes = DB.categories
+    .map(c=>({cat:c, stk:stockCategorie(c.id)}))
+    .filter(x=>x.stk <= 15);
+
+  return `
+  <div class="page">
+    <div class="page-title">Bonjour 👋</div>
+    <div class="page-sub">${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</div>
+
+    <div class="metrics">
+      <div class="metric accent">
+        <div class="m-label">Dernier inventaire</div>
+        <div class="m-value mono">${fmt(caJour)} ${DB.parametres.devise}</div>
+      </div>
+      <div class="metric gold">
+        <div class="m-label">Ventes totales</div>
+        <div class="m-value mono">${fmt(s.totalVentes)}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">Valeur du stock</div>
+        <div class="m-value mono">${fmt(s.valeurStock)}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">Résultat caisse</div>
+        <div class="m-value mono">${fmt(s.resultatCaisse)}</div>
+      </div>
+    </div>
+
+    ${alertes.length ? `
+    <div class="card">
+      <div class="card-head"><div class="card-title">⚠️ Stock à surveiller</div></div>
+      ${alertes.map(a=>{
+        const st = statutStock(a.stk);
+        return `<div class="cat-row">
+          <span class="cat-dot" style="background:${a.cat.couleur}"></span>
+          <div class="cat-info"><div class="cat-name">${a.cat.nom}</div>
+          <div class="cat-meta">${a.cat.prix} ${DB.parametres.devise} / unité</div></div>
+          <span class="pill ${st.pill}">${a.stk} • ${st.label}</span>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📦 Stock par catégorie</div></div>
+      ${DB.categories.map(c=>{
+        const stk = stockCategorie(c.id);
+        const st = statutStock(stk);
+        return `<div class="cat-row">
+          <span class="cat-dot" style="background:${c.couleur}"></span>
+          <div class="cat-info"><div class="cat-name">${c.nom}</div>
+          <div class="cat-meta">${c.prix} ${DB.parametres.devise}</div></div>
+          <span class="pill ${st.pill}">${fmt(stk)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📊 Résumé financier</div></div>
+      <table class="tbl">
+        <tr><td>Total achats</td><td class="num">${fmtF(s.totalAchats)}</td></tr>
+        <tr><td>Total ventes (encaissé)</td><td class="num" style="color:var(--givre)">${fmtF(s.totalVentes)}</td></tr>
+        <tr><td>Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(s.totalDepenses)}</td></tr>
+        <tr><td>Versements vendeur</td><td class="num">${fmtF(s.totalVersements)}</td></tr>
+        <tr><td><b>Résultat caisse</b></td><td class="num" style="color:var(--ambre);font-weight:800">${fmtF(s.resultatCaisse)}</td></tr>
+      </table>
+      <div class="hint" style="margin-top:8px">Résultat caisse = ventes encaissées − dépenses</div>
+    </div>
+
+    ${DB.inventaires.length ? `
+    <div class="card">
+      <div class="card-head"><div class="card-title">📋 Historique inventaires</div></div>
+      <div class="hint" style="margin-bottom:10px">Touchez une ligne pour changer la date ou supprimer.</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <tr><th>Date</th><th class="num">Vendu</th><th class="num">Montant</th></tr>
+        ${[...DB.inventaires].reverse().slice(0,15).map(inv=>{
+          const totalVendu = inv.lignes.reduce((s,l)=>s+l.vendu,0);
+          return `<tr style="cursor:pointer" onclick="openInventaireSheet('${inv.id}')">
+            <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(inv.date)}${inv.heure?' '+inv.heure:''}</td>
+            <td class="num">${fmt(totalVendu)}</td>
+            <td class="num" style="color:var(--givre)">${fmt(inv.totalCA)}</td>
+          </tr>`;
+        }).join('')}
+      </table></div>
+    </div>` : ''}
+  </div>`;
+}
+
+// ---------- PAGE INVENTAIRE (le coeur) ----------
+function pageInventaire(){
+  return `
+  <div class="page">
+    <div class="page-title">Inventaire du jour</div>
+    <div class="page-sub">Comptez le stock restant. La vente se calcule toute seule.</div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">📋 Stock compté</div>
+        <span class="cat-meta" id="invDate">${dateFr(auj())}</span>
+      </div>
+      <div id="invList">
+        ${DB.categories.map(c=>{
+          const theo = stockCategorie(c.id);
+          return `<div class="cat-row">
+            <span class="cat-dot" style="background:${c.couleur}"></span>
+            <div class="cat-info">
+              <div class="cat-name">${c.nom}</div>
+              <div class="cat-meta">théorique: ${fmt(theo)} • ${c.prix}${DB.parametres.devise}</div>
+            </div>
+            <input class="cat-input" type="number" inputmode="numeric" min="0"
+              data-cat="${c.id}" data-theo="${theo}" placeholder="0" value="${theo>0?theo:''}">
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card" id="invResult" style="display:none">
+      <div class="card-head"><div class="card-title">💰 Ventes calculées</div></div>
+      <div class="tbl-wrap"><table class="tbl" id="invTbl"></table></div>
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--texte-doux);font-size:13px">Chiffre d'affaires</span>
+        <span class="big-total" id="invTotal">0</span>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-ghost" id="btnCalc">🧮 Calculer</button>
+      <button class="btn btn-primary" id="btnSaveInv" style="display:none">✓ Valider l'inventaire</button>
+    </div>
+    <div class="hint">La validation enregistre les ventes et met à jour le stock.</div>
+  </div>`;
+}
+
+function bindInventaire(){
+  let calc = null;
+
+  function getSaisies(){
+    const s = {};
+    document.querySelectorAll('#invList .cat-input').forEach(i=>{
+      s[i.dataset.cat] = Number(i.value)||0;
+    });
+    return s;
+  }
+
+  $('#btnCalc').addEventListener('click', ()=>{
+    calc = calculerInventaire(getSaisies());
+    const tbl = $('#invTbl');
+    tbl.innerHTML = `<tr><th>Catégorie</th><th class="num">Théo</th><th class="num">Compté</th><th class="num">Vendu</th><th class="num">Montant</th></tr>` +
+      calc.lignes.map(l=>`<tr>
+        <td>${l.nom}</td>
+        <td class="num">${fmt(l.stockAvant)}</td>
+        <td class="num">${fmt(l.compte)}</td>
+        <td class="num" style="color:var(--givre)">${fmt(l.vendu)}</td>
+        <td class="num">${fmt(l.montant)}</td>
+      </tr>`).join('');
+    $('#invTotal').textContent = fmt(calc.totalCA) + ' ' + DB.parametres.devise;
+    $('#invResult').style.display = 'block';
+    $('#btnSaveInv').style.display = 'flex';
+    $('#invResult').scrollIntoView({behavior:'smooth', block:'nearest'});
+  });
+
+  $('#btnSaveInv').addEventListener('click', ()=>{
+    if(!calc){ toast('Calculez d\'abord','err'); return; }
+    const inv = enregistrerInventaire(getSaisies());
+    toast('Inventaire validé • ' + fmt(inv.totalCA) + ' ' + DB.parametres.devise);
+    go('accueil');
+  });
+}
+
+// ---------- PAGE ACHATS ----------
+function pageAchats(){
+  const achats = [...DB.achats].reverse();
+  return `
+  <div class="page">
+    <div class="page-title">Achats</div>
+    <div class="page-sub">Enregistrez ce qui entre au frigo. Appuyez sur + pour ajouter.</div>
+
+    ${achats.length===0 ? `
+      <div class="empty">
+        <div class="e-ic">📥</div>
+        <div>Aucun achat enregistré</div>
+        <div style="font-size:13px;margin-top:6px">Touchez le bouton + en bas à droite</div>
+      </div>` : `
+      <div class="card">
+        <div class="hint" style="margin-bottom:10px">Touchez une ligne pour la modifier.</div>
+        <div class="tbl-wrap"><table class="tbl">
+          <tr><th>Date</th><th>Produit</th><th class="num">Qté</th><th class="num">Montant</th></tr>
+          ${achats.map(a=>{
+            const cat = DB.categories.find(c=>c.id===a.categorieId);
+            return `<tr style="cursor:pointer" onclick="openAchatSheet('${a.id}')">
+              <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(a.date)}</td>
+              <td><div style="font-weight:600">${a.produit}</div>
+                  <div style="font-size:11px;color:var(--texte-faible)">${cat?cat.nom:'?'} • ${a.cartons}×${a.contenu}</div></td>
+              <td class="num">${fmt(a.quantite)}</td>
+              <td class="num">${fmt(a.prixGlobal)}</td>
+            </tr>`;
+          }).join('')}
+        </table></div>
+      </div>`}
+  </div>`;
+}
+
+function openAchatSheet(editId){
+  window._payMode = 'tout';
+  const cats = DB.categories;
+  const prods = DB.produits;
+  const a = editId ? DB.achats.find(x=>x.id===editId) : null;
+  const frequents = a ? [] : produitsFrequents(6);
+  sheet(`
+    <h2>${a ? '✏️ Modifier achat' : '📥 Nouvel achat'}</h2>
+    <div class="s-sub">Détail du produit acheté (facture)</div>
+
+    ${frequents.length ? `
+    <div class="field">
+      <label>⚡ Produits fréquents</label>
+      <div class="swipe-x" id="quickProds">
+        ${frequents.map(nom=>`<button type="button" class="chip" data-prod="${nom}">${nom}</button>`).join('')}
+      </div>
+    </div>` : ''}
+
+    <div class="field">
+      <label>Produit</label>
+      <input class="input" id="aProduit" list="prodList" placeholder="Ex: COCA, FANTA, BRAMALI..." autocomplete="off" value="${a?a.produit:''}">
+      <datalist id="prodList">${prods.map(p=>`<option value="${p.nom}">`).join('')}</datalist>
+      <div class="hint" id="aMemo"></div>
+    </div>
+
+    <div class="field">
+      <label>Catégorie de vente</label>
+      <select class="input" id="aCat">
+        ${cats.map(c=>`<option value="${c.id}" ${a&&a.categorieId===c.id?'selected':''}>${c.nom} — ${c.prix}${DB.parametres.devise}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="row2">
+      <div class="field"><label>Cartons</label>
+        <input class="input" id="aCartons" type="number" inputmode="numeric" min="0" placeholder="0" value="${a?a.cartons:''}"></div>
+      <div class="field"><label>Contenu / carton</label>
+        <select class="input" id="aContenu">
+          <option value="24" ${a&&a.contenu===24?'selected':''}>24</option>
+          <option value="12" ${a&&a.contenu===12?'selected':''}>12</option>
+          <option value="6" ${a&&a.contenu===6?'selected':''}>6</option>
+        </select></div>
+    </div>
+
+    <div class="field">
+      <label>Prix global (facture)</label>
+      <input class="input" id="aPrix" type="number" inputmode="numeric" min="0" placeholder="Montant total payé" value="${a?a.prixGlobal:''}">
+    </div>
+
+    <div class="field">
+      <label>Fournisseur (optionnel)</label>
+      <input class="input" id="aFourn" list="fournList" placeholder="Ex: DIARRA, ACHOURA..." value="${a?a.fournisseur:''}" autocomplete="off">
+      <datalist id="fournList">${DB.fournisseurs.map(f=>`<option value="${f.nom}">`).join('')}</datalist>
+    </div>
+
+    ${!a ? `
+    <div class="field">
+      <label>Paiement à l'achat</label>
+      <div class="seg" style="margin-bottom:0">
+        <button type="button" class="on" id="payTout" onclick="setPayMode('tout')">Payé tout</button>
+        <button type="button" id="payRien" onclick="setPayMode('rien')">Crédit (0)</button>
+        <button type="button" id="payPartiel" onclick="setPayMode('partiel')">Partiel</button>
+      </div>
+      <input class="input" id="aPaye" type="number" inputmode="numeric" min="0" placeholder="Montant payé" style="display:none;margin-top:10px">
+      <div class="hint" id="payHint">Toute la facture est payée maintenant.</div>
+    </div>` : ''}
+
+    <div class="field">
+      <label>Date</label>
+      <input class="input" id="aDate" type="date" value="${a?a.date:auj()}">
+    </div>
+
+    <div class="btn-group">
+      ${a ? `<button class="btn btn-danger btn-sm" id="aDel" style="flex:0 0 auto">🗑️</button>` : ''}
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" id="aSave">${a?'Enregistrer':'Ajouter achat'}</button>
+    </div>
+  `);
+
+  // Auto-remplissage quand on choisit un produit connu
+  function appliquerMemo(nom){
+    const m = memoProduit(nom);
+    const memoDiv = $('#aMemo');
+    if(m){
+      $('#aCat').value = m.categorieId;
+      // ne pré-remplir prix/carton que si les champs sont vides (mode ajout)
+      if(!$('#aCartons').value && m.dernierCartons) $('#aCartons').value = m.dernierCartons;
+      if(!$('#aPrix').value && m.dernierPrix) $('#aPrix').value = m.dernierPrix;
+      if(m.dernierContenu) $('#aContenu').value = m.dernierContenu;
+      if(memoDiv && m.dernierPrix){
+        memoDiv.innerHTML = `💡 Dernier achat : ${m.dernierCartons} carton(s) • ${fmt(m.dernierPrix)} ${DB.parametres.devise}`;
+      }
+    } else if(memoDiv){
+      memoDiv.innerHTML = '';
+    }
+  }
+
+  $('#aProduit').addEventListener('input', e=> appliquerMemo(e.target.value.trim()));
+
+  // Boutons rapides
+  document.querySelectorAll('#quickProds .chip').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const nom = b.dataset.prod;
+      $('#aProduit').value = nom;
+      // vider prix/carton pour laisser le mémo re-remplir proprement
+      $('#aCartons').value = ''; $('#aPrix').value = '';
+      appliquerMemo(nom);
+      document.querySelectorAll('#quickProds .chip').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+    });
+  });
+
+  $('#aSave').addEventListener('click', ()=>{
+    const prixGlobal = Number($('#aPrix').value)||0;
+    const data = {
+      produitNom: $('#aProduit').value.trim(),
+      categorieId: $('#aCat').value,
+      cartons: Number($('#aCartons').value)||0,
+      contenu: Number($('#aContenu').value)||0,
+      prixGlobal,
+      fournisseur: $('#aFourn').value.trim(),
+      date: $('#aDate').value || auj()
+    };
+    if(!data.produitNom){ toast('Indiquez le produit','err'); return; }
+    if(data.cartons<=0){ toast('Indiquez le nombre de cartons','err'); return; }
+    if(data.prixGlobal<=0){ toast('Indiquez le prix de la facture','err'); return; }
+
+    if(a){ modifierAchat(a.id, data); toast('Achat modifié ✓'); }
+    else {
+      // déterminer le montant payé selon le mode
+      const mode = window._payMode || 'tout';
+      if(mode==='tout') data.montantPaye = prixGlobal;
+      else if(mode==='rien') data.montantPaye = 0;
+      else data.montantPaye = Number($('#aPaye').value)||0;
+      ajouterAchat(data);
+      toast('Achat enregistré ✓');
+    }
+    closeSheet();
+    go('achats');
+  });
+
+  $('#aDel')?.addEventListener('click', ()=>{
+    sheet(`
+      <h2>🗑️ Supprimer cet achat ?</h2>
+      <div class="s-sub">${a.produit} • ${dateFr(a.date)} • ${fmt(a.prixGlobal)} ${DB.parametres.devise}</div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+        <button class="btn btn-danger" id="aDelOk">Oui, supprimer</button>
+      </div>`);
+    $('#aDelOk').addEventListener('click', ()=>{
+      supprimerAchat(a.id); toast('Achat supprimé'); closeSheet(); go('achats');
+    });
+  });
+}
+
+// ---------- PAGE STOCK ----------
+function pageStock(){
+  const s = stats();
+  return `
+  <div class="page">
+    <div class="page-title">Stock détaillé</div>
+    <div class="page-sub">État actuel par catégorie. Touchez une catégorie pour voir/modifier ses produits.</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
+      <button class="chip on" onclick="go('stock')">📦 Stock</button>
+    </div>
+
+    <div class="metrics">
+      <div class="metric accent">
+        <div class="m-label">Valeur (prix vente)</div>
+        <div class="m-value mono">${fmt(s.valeurStock)}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">Catégories</div>
+        <div class="m-value">${DB.categories.length}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      ${DB.categories.map(c=>{
+        const stk = stockCategorie(c.id);
+        const st = statutStock(stk);
+        const val = stk>0 ? stk * c.prix : 0;
+        const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
+        return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
+          <span class="cat-dot" style="background:${c.couleur}"></span>
+          <div class="cat-info">
+            <div class="cat-name">${c.nom}</div>
+            <div class="cat-meta">${fmt(c.prix)} ${DB.parametres.devise} • ${nbProd} produit(s) • valeur ${fmt(val)}</div>
+          </div>
+          <span class="pill ${st.pill}">${fmt(stk)}</span>
+        </div>`;
+      }).join('')}
+      <div class="hint" style="margin-top:10px">Valeur calculée au prix de vente. Touchez pour gérer les produits.</div>
+    </div>
+  </div>`;
+}
+
+// ---------- PAGE PLUS (réglages, catégories, export) ----------
+function pagePlus(){
+  return `
+  <div class="page">
+    <div class="page-title">Plus</div>
+    <div class="page-sub">Réglages et outils</div>
+
+    <div class="card" style="border-color:rgba(251,191,36,.4)">
+      <div class="card-head"><div class="card-title">🛡️ Protéger mes données</div></div>
+      <div class="hint" style="margin-bottom:12px">Téléchargez une sauvegarde sur votre téléphone. À faire souvent (chaque soir par exemple).</div>
+      <button class="btn btn-ambre" id="btnExportBig" style="margin-bottom:10px">📥 Sauvegarder maintenant</button>
+      <button class="btn btn-ghost" id="btnImportBig">📤 Restaurer une sauvegarde</button>
+      <input type="file" id="importFileBig" accept=".json" style="display:none">
+      ${(() => {
+        const t = localStorage.getItem(DB_KEY+'_time');
+        return t ? `<div class="hint" style="margin-top:10px">Dernière modification : ${new Date(t).toLocaleString('fr-FR')}</div>` : '';
+      })()}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📊 Comptabilité</div></div>
+      <div class="btn-group" style="flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="go('caisse')">💰 Caisse</button>
+        <button class="btn btn-ghost" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      </div>
+      <div class="btn-group" style="margin-top:10px">
+        <button class="btn btn-ghost" onclick="go('benefice')">📈 Bénéfice</button>
+        <button class="btn btn-ghost" onclick="go('stock')">📦 Stock</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🎬 Stock de départ</div></div>
+      ${DB.stockDepart ?
+        `<div class="hint" style="margin-bottom:10px">Défini le ${dateFr(DB.stockDepart.date)}. Modifiez si besoin.</div>` :
+        `<div class="hint" style="margin-bottom:10px">Saisissez votre stock actuel pour démarrer avec des calculs justes.</div>`}
+      <button class="btn btn-ambre" id="btnStockDepart">
+        ${DB.stockDepart ? '✏️ Modifier le stock de départ' : '🎬 Saisir mon stock de départ'}
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🏷️ Catégories & produits</div>
+        <button class="btn btn-sm btn-ghost" id="addCat">+ Ajouter</button></div>
+      <div class="hint" style="margin-bottom:10px">Touchez une catégorie pour voir/gérer ses produits.</div>
+      <div id="catList">
+        ${DB.categories.map(c=>{
+          const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
+          const stk = stockCategorie(c.id);
+          return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
+            <span class="cat-dot" style="background:${c.couleur}"></span>
+            <div class="cat-info"><div class="cat-name">${c.nom}</div>
+            <div class="cat-meta">${c.prix} ${DB.parametres.devise} • ${nbProd} produit(s) • stock ${fmt(stk)}</div></div>
+            <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();openCatEdit('${c.id}')">✏️</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">💸 Dépenses & versements</div></div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" id="addDep">+ Dépense</button>
+        <button class="btn btn-ghost" id="addVers">+ Versement</button>
+      </div>
+      ${DB.depenses.length||DB.versements.length ? `
+      <div class="hint" style="margin-top:10px;margin-bottom:4px">Touchez une ligne pour modifier.</div>
+      <div class="tbl-wrap"><table class="tbl">
+        ${[...DB.depenses.map(d=>({...d,type:'dep'})), ...DB.versements.map(v=>({...v,type:'vers'}))]
+          .sort((a,b)=>b.date<a.date?-1:1).slice(0,10).map(x=>`
+          <tr style="cursor:pointer" onclick="openMouvementSheet('${x.type}','${x.id}')">
+          <td style="font-size:12px;color:var(--texte-doux)">${dateFr(x.date)}</td>
+          <td>${x.type==='dep'?'💸 '+x.motif:'💵 Versement'+(x.note?' ('+x.note+')':'')}</td>
+          <td class="num" style="color:${x.type==='dep'?'var(--rouge)':'var(--vert)'}">${fmt(x.montant)}</td></tr>`).join('')}
+      </table></div>`:''}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">💾 Données</div></div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" id="btnExport">📤 Exporter</button>
+        <button class="btn btn-ghost" id="btnImport">📥 Importer</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display:none">
+      <div class="divider"></div>
+      <button class="btn btn-danger" id="btnReset">🗑️ Réinitialiser tout</button>
+      <div class="hint">Exportez régulièrement pour sauvegarder vos données.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🔐 Sécurité</div></div>
+      <button class="btn btn-ghost" id="btnChangePin">🔑 Changer mon code PIN</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">⚙️ Boutique</div></div>
+      <div class="field"><label>Nom de la boutique</label>
+        <input class="input" id="setBoutique" value="${DB.parametres.boutique}"></div>
+      <button class="btn btn-primary btn-sm" id="saveSet">Enregistrer</button>
+    </div>
+
+    <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
+      FRIGO v1.0 • Vos données restent sur votre téléphone
+    </div>
+  </div>`;
+}
+
+/* ===== pages2.js ===== */
+/* ============================================================
+   FRIGO — Pages Caisse, Fournisseurs, Bénéfice
+   ============================================================ */
+
+// ---------- PAGE CAISSE (le noyau) ----------
+function pageCaisse(){
+  const mvts = mouvementsCaisse().reverse(); // plus récent en haut
+  const s = stats();
+  const cmp = comparaisonVendeur();
+  return `
+  <div class="page">
+    <div class="page-title">💰 Caisse</div>
+    <div class="page-sub">Le cœur de votre commerce : tout l'argent qui entre et sort.</div>
+
+    <div class="metrics">
+      <div class="metric accent">
+        <div class="m-label">Solde en caisse</div>
+        <div class="m-value mono">${fmt(s.soldeCaisse)} ${DB.parametres.devise}</div>
+      </div>
+      <div class="metric ${s.dettesFournisseurs>0?'danger':''}">
+        <div class="m-label">Dettes fournisseurs</div>
+        <div class="m-value mono">${fmt(s.dettesFournisseurs)}</div>
+      </div>
+    </div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip on" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
+      <button class="chip" onclick="go('stock')">📦 Stock</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🧮 Contrôle vendeur</div></div>
+      <div class="hint" style="margin-bottom:12px">Le vendeur encaisse les ventes, paie fournisseurs et dépenses, puis verse le reste.</div>
+      <table class="tbl">
+        <tr><td>Ventes encaissées</td><td class="num" style="color:var(--vert)">${fmtF(cmp.ventes)}</td></tr>
+        <tr><td>− Fournisseurs payés</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.fournisseursPayes)}</td></tr>
+        <tr><td>− Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.depenses)}</td></tr>
+        <tr><td><b>= Devrait verser</b></td><td class="num" style="font-weight:800">${fmtF(cmp.duParVendeur)}</td></tr>
+        <tr><td>Réellement versé</td><td class="num" style="color:var(--givre)">${fmtF(cmp.verse)}</td></tr>
+      </table>
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+        <span style="font-weight:700">${cmp.statut==='ok'?'✓ Compte juste':(cmp.statut==='manque'?'⚠️ Manque':'↑ Surplus')}</span>
+        <span class="big-total" style="font-size:22px;color:${cmp.statut==='ok'?'var(--vert)':(cmp.statut==='manque'?'var(--rouge)':'var(--ambre)')}">
+          ${cmp.ecart>0?'+':''}${fmt(cmp.ecart)} ${DB.parametres.devise}
+        </span>
+      </div>
+      ${cmp.statut==='manque' ? `<div class="hint" style="color:var(--rouge)">Le vendeur doit ${fmt(-cmp.ecart)} ${DB.parametres.devise} de plus.</div>` :
+        cmp.statut==='surplus' ? `<div class="hint" style="color:var(--ambre)">Le vendeur a versé ${fmt(cmp.ecart)} ${DB.parametres.devise} de trop.</div>` :
+        `<div class="hint" style="color:var(--vert)">Tout correspond parfaitement.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📊 Mouvements</div></div>
+      ${mvts.length===0 ? `
+        <div class="empty"><div class="e-ic">💰</div><div>Aucun mouvement</div>
+        <div style="font-size:13px;margin-top:6px">Les ventes, paiements et dépenses apparaîtront ici</div></div>
+      ` : `
+      <div class="tbl-wrap"><table class="tbl">
+        <tr><th>Date</th><th>Mouvement</th><th class="num">Montant</th><th class="num">Solde</th></tr>
+        ${mvts.slice(0,60).map(m=>`
+          <tr>
+            <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${m.fixe?'—':dateFr(m.date)}</td>
+            <td style="font-size:13px">${m.libelle}</td>
+            <td class="num" style="color:${m.sens==='+'?'var(--vert)':'var(--rouge)'}">${m.sens==='+'?'+':'−'}${fmt(m.montant)}</td>
+            <td class="num" style="font-weight:700;color:${m.solde>=0?'var(--givre)':'var(--rouge)'}">${fmt(m.solde)}</td>
+          </tr>`).join('')}
+      </table></div>
+      <div class="hint" style="margin-top:10px">Solde = argent disponible après chaque mouvement.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">➕ Ajouter à la caisse</div></div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="openDepenseSheet()">💸 Dépense</button>
+        <button class="btn btn-ghost" onclick="openVersementSheet()">💵 Versement</button>
+      </div>
+      <div class="btn-group" style="margin-top:10px">
+        <button class="btn btn-ghost" onclick="openSoldeDepartCaisseSheet()">🏦 Solde de départ caisse</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ---------- PAGE FOURNISSEURS ----------
+function pageFournisseurs(){
+  const fournisseurs = DB.fournisseurs.map(f=>infosFournisseur(f.id))
+    .sort((a,b)=> b.solde - a.solde); // ceux à qui on doit le plus en haut
+  const totalDu = totalDettesFournisseurs();
+  return `
+  <div class="page">
+    <div class="page-title">🏢 Fournisseurs</div>
+    <div class="page-sub">Comptes et soldes à payer.</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip on" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
+      <button class="chip" onclick="go('stock')">📦 Stock</button>
+    </div>
+
+    <div class="metric danger" style="margin-bottom:16px">
+      <div class="m-label">Total à payer</div>
+      <div class="m-value mono">${fmt(totalDu)} ${DB.parametres.devise}</div>
+    </div>
+
+    ${fournisseurs.length===0 ? `
+      <div class="empty"><div class="e-ic">🏢</div><div>Aucun fournisseur</div>
+      <div style="font-size:13px;margin-top:6px">Ils apparaissent quand vous enregistrez un achat avec un fournisseur</div></div>
+    ` : `
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px">Touchez un fournisseur pour voir le détail et payer.</div>
+      ${fournisseurs.map(f=>`
+        <div class="cat-row" style="cursor:pointer" onclick="openFournisseurSheet('${f.id}')">
+          <span class="cat-dot" style="background:${f.solde>0?'var(--rouge)':'var(--vert)'}"></span>
+          <div class="cat-info"><div class="cat-name">${f.nom}</div>
+          <div class="cat-meta">${f.nbAchats} achat(s) • payé ${fmt(f.totalPaye)}/${fmt(f.totalAchats)}</div></div>
+          <div style="text-align:right">
+            ${f.solde>0
+              ? `<div class="pill out">doit ${fmt(f.solde)}</div>`
+              : `<div class="pill ok">soldé ✓</div>`}
+          </div>
+        </div>`).join('')}
+    </div>`}
+  </div>`;
+}
+
+// ---------- PAGE BÉNÉFICE ----------
+let BENEFICE_PERIODE = 'mois';
+function pageBenefice(){
+  let per, titre;
+  const ref = auj();
+  if(BENEFICE_PERIODE==='jour'){ per = periodeJour(ref); titre = 'Aujourd hui'; }
+  else if(BENEFICE_PERIODE==='semaine'){ per = periodeSemaine(ref); titre = 'Cette semaine'; }
+  else { per = periodeMois(ref); titre = 'Ce mois'; }
+  const b = beneficePeriode(per.debut, per.fin);
+
+  return `
+  <div class="page">
+    <div class="page-title">📈 Bénéfice</div>
+    <div class="page-sub">Marge réelle : prix de vente − prix d'achat.</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip on" onclick="go('benefice')">📈 Bénéfice</button>
+      <button class="chip" onclick="go('stock')">📦 Stock</button>
+    </div>
+
+    <div class="seg">
+      <button class="${BENEFICE_PERIODE==='jour'?'on':''}" onclick="setBeneficePeriode('jour')">Jour</button>
+      <button class="${BENEFICE_PERIODE==='semaine'?'on':''}" onclick="setBeneficePeriode('semaine')">Semaine</button>
+      <button class="${BENEFICE_PERIODE==='mois'?'on':''}" onclick="setBeneficePeriode('mois')">Mois</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">${titre}</div>
+        <span class="cat-meta">${dateFr(per.debut)} → ${dateFr(per.fin)}</span></div>
+      <div style="text-align:center;padding:10px 0">
+        <div style="color:var(--texte-doux);font-size:13px;margin-bottom:4px">Bénéfice de la période</div>
+        <div class="big-total" style="color:${b.benefice>=0?'var(--vert)':'var(--rouge)'}">${fmt(b.benefice)} ${DB.parametres.devise}</div>
+      </div>
+      <div class="divider"></div>
+      <table class="tbl">
+        <tr><td>Ventes</td><td class="num" style="color:var(--givre)">${fmtF(b.ventes)}</td></tr>
+        <tr><td>Coût d'achat</td><td class="num" style="color:var(--rouge)">${fmtF(b.cout)}</td></tr>
+        <tr><td><b>Bénéfice</b></td><td class="num" style="color:var(--ambre);font-weight:800">${fmtF(b.benefice)}</td></tr>
+      </table>
+    </div>
+
+    ${b.details.length ? `
+    <div class="card">
+      <div class="card-head"><div class="card-title">Détail par catégorie</div></div>
+      <div class="tbl-wrap"><table class="tbl">
+        <tr><th>Catégorie</th><th class="num">Vendu</th><th class="num">Ventes</th><th class="num">Bénéfice</th></tr>
+        ${b.details.sort((a,b)=>b.benefice-a.benefice).map(d=>`
+          <tr><td>${d.nom}</td>
+          <td class="num">${fmt(d.vendu)}</td>
+          <td class="num">${fmt(d.ventes)}</td>
+          <td class="num" style="color:${d.benefice>=0?'var(--vert)':'var(--rouge)'}">${fmt(d.benefice)}</td></tr>`).join('')}
+      </table></div>
+    </div>` : `
+    <div class="empty"><div class="e-ic">📈</div><div>Aucune vente sur cette période</div></div>`}
+
+    <div class="hint" style="text-align:center">Le coût d'achat vient du prix moyen payé pour chaque catégorie.</div>
+  </div>`;
+}
+
+function setBeneficePeriode(p){ BENEFICE_PERIODE = p; go('benefice'); }
+
+/* ===== actions.js ===== */
+/* ============================================================
+   FRIGO — Actions page Plus + Initialisation
+   ============================================================ */
+
+function bindPlus(){
+  // --- Changer le PIN ---
+  $('#btnChangePin')?.addEventListener('click', openChangePinSheet);
+
+  // --- Stock de départ ---
+  $('#btnStockDepart')?.addEventListener('click', openStockDepartSheet);
+
+  // --- Catégories ---
+  $('#addCat')?.addEventListener('click', ()=> openCatEdit());
+
+  // --- Dépense ---
+  $('#addDep')?.addEventListener('click', ()=> openDepenseSheet());
+
+  // --- Versement ---
+  $('#addVers')?.addEventListener('click', ()=> openVersementSheet());
+
+  // --- Export (fonction partagée) ---
+  function faireExport(){
+    const data = JSON.stringify(DB, null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `frigo_sauvegarde_${auj()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Sauvegarde téléchargée ✓');
+  }
+  function faireImport(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      try{
+        const imported = JSON.parse(ev.target.result);
+        if(!imported.categories){ toast('Fichier invalide','err'); return; }
+        DB = imported;
+        sauverDB();
+        toast('Données restaurées ✓');
+        renderApp();
+      }catch(err){ toast('Erreur de lecture','err'); }
+    };
+    reader.readAsText(file);
+  }
+
+  // Gros boutons visibles (haut de page)
+  $('#btnExportBig')?.addEventListener('click', faireExport);
+  $('#btnImportBig')?.addEventListener('click', ()=> $('#importFileBig').click());
+  $('#importFileBig')?.addEventListener('change', e=> faireImport(e.target.files[0]));
+
+  // --- Export ---
+  $('#btnExport')?.addEventListener('click', faireExport);
+
+  // --- Import ---
+  $('#btnImport')?.addEventListener('click', ()=> $('#importFile').click());
+  $('#importFile')?.addEventListener('change', e=> faireImport(e.target.files[0]));
+
+  // --- Reset ---
+  $('#btnReset')?.addEventListener('click', ()=>{
+    sheet(`
+      <h2>🗑️ Réinitialiser</h2>
+      <div class="s-sub">Cette action efface TOUTES vos données (achats, inventaires, dépenses). Exportez d'abord si besoin.</div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+        <button class="btn btn-danger" id="rConfirm">Oui, tout effacer</button>
+      </div>`);
+    $('#rConfirm').addEventListener('click', ()=>{
+      DB = dbVide(); sauverDB(); closeSheet(); toast('Données réinitialisées'); renderApp();
+    });
+  });
+
+  // --- Réglages boutique ---
+  $('#saveSet')?.addEventListener('click', ()=>{
+    DB.parametres.boutique = $('#setBoutique').value.trim() || 'Mon Frigo';
+    sauverDB(); toast('Enregistré ✓'); renderApp();
+  });
+}
+
+function openMouvementSheet(type, id){
+  const liste = type==='dep' ? DB.depenses : DB.versements;
+  const m = liste.find(x=>x.id===id);
+  if(!m) return;
+  const estDep = type==='dep';
+  sheet(`
+    <h2>${estDep?'💸 Dépense':'💵 Versement'}</h2>
+    <div class="s-sub">Modifier ou supprimer</div>
+    ${estDep ? `
+      <div class="field"><label>Motif</label><input class="input" id="mMotif" value="${m.motif||''}"></div>
+    ` : `
+      <div class="field"><label>Note (optionnel)</label><input class="input" id="mNote" value="${m.note||''}"></div>
+    `}
+    <div class="field"><label>Montant</label>
+      <input class="input" id="mMontant" type="number" inputmode="numeric" value="${m.montant}"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="mDate" type="date" value="${m.date}"></div>
+    <div class="btn-group">
+      <button class="btn btn-danger btn-sm" id="mDel" style="flex:0 0 auto">🗑️</button>
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-primary" id="mSave">Enregistrer</button>
+    </div>
+  `);
+
+  $('#mSave').addEventListener('click', ()=>{
+    const montant = Number($('#mMontant').value)||0;
+    if(montant<=0){ toast('Montant invalide','err'); return; }
+    m.montant = montant;
+    m.date = $('#mDate').value || m.date;
+    if(estDep){
+      const motif = $('#mMotif').value.trim();
+      if(!motif){ toast('Indiquez le motif','err'); return; }
+      m.motif = motif;
+    } else {
+      m.note = $('#mNote').value.trim();
+    }
+    sauverDB();
+    toast('Modifié ✓');
+    closeSheet();
+    go('plus');
+  });
+
+  $('#mDel').addEventListener('click', ()=>{
+    if(estDep) DB.depenses = DB.depenses.filter(x=>x.id!==id);
+    else DB.versements = DB.versements.filter(x=>x.id!==id);
+    sauverDB();
+    toast('Supprimé');
+    closeSheet();
+    go('plus');
+  });
+}
+
+function openInventaireSheet(id){
+  const inv = DB.inventaires.find(x=>x.id===id);
+  if(!inv) return;
+  const lignesVendues = inv.lignes.filter(l=>l.vendu>0);
+  sheet(`
+    <h2>📋 Inventaire</h2>
+    <div class="s-sub">${dateFr(inv.date)}${inv.heure?' à '+inv.heure:''} • ${fmt(inv.totalCA)} ${DB.parametres.devise}</div>
+
+    <div class="tbl-wrap"><table class="tbl">
+      <tr><th>Catégorie</th><th class="num">Vendu</th><th class="num">Montant</th></tr>
+      ${lignesVendues.map(l=>`<tr>
+        <td>${l.nom}</td>
+        <td class="num" style="color:var(--givre)">${fmt(l.vendu)}</td>
+        <td class="num">${fmt(l.montant)}</td>
+      </tr>`).join('')}
+    </table></div>
+
+    <div class="field" style="margin-top:16px">
+      <label>Date de l'inventaire</label>
+      <input class="input" id="invDateEdit" type="date" value="${inv.date}">
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-danger btn-sm" id="invDel" style="flex:0 0 auto">🗑️</button>
+      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
+      <button class="btn btn-primary" id="invDateSave">Enregistrer la date</button>
+    </div>
+  `);
+
+  $('#invDateSave').addEventListener('click', ()=>{
+    const d = $('#invDateEdit').value || inv.date;
+    modifierDateInventaire(inv.id, d);
+    toast('Date modifiée ✓');
+    closeSheet();
+    go('accueil');
+  });
+
+  $('#invDel').addEventListener('click', ()=>{
+    sheet(`
+      <h2>🗑️ Supprimer cet inventaire ?</h2>
+      <div class="s-sub">Les ventes de cet inventaire seront annulées et le stock recalculé.</div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+        <button class="btn btn-danger" id="invDelOk">Oui, supprimer</button>
+      </div>`);
+    $('#invDelOk').addEventListener('click', ()=>{
+      supprimerInventaire(inv.id);
+      toast('Inventaire supprimé');
+      closeSheet();
+      go('accueil');
+    });
+  });
+}
+
+function openChangePinSheet(){
+  sheet(`
+    <h2>🔑 Changer le code PIN</h2>
+    <div class="s-sub">Entrez votre code actuel, puis le nouveau code.</div>
+    <div class="field"><label>Code actuel</label>
+      <input class="input" id="pinOld" type="password" inputmode="numeric" maxlength="4"
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+    <div class="field"><label>Nouveau code (4 chiffres)</label>
+      <input class="input" id="pinNew" type="password" inputmode="numeric" maxlength="4"
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+    <div class="field"><label>Confirmer le nouveau code</label>
+      <input class="input" id="pinConf" type="password" inputmode="numeric" maxlength="4"
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+    <div class="btn-group" style="margin-top:8px">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-primary" id="pinSave">Enregistrer</button>
+    </div>
+  `);
+
+  $('#pinSave').addEventListener('click', ()=>{
+    const ancien = $('#pinOld').value;
+    const nouveau = $('#pinNew').value;
+    const conf = $('#pinConf').value;
+    const actuel = localStorage.getItem(PIN_KEY);
+
+    if(ancien !== actuel){ toast('Code actuel incorrect','err'); return; }
+    if(nouveau.length !== 4 || !/^\d{4}$/.test(nouveau)){ toast('Le nouveau code doit avoir 4 chiffres','err'); return; }
+    if(nouveau !== conf){ toast('Les nouveaux codes ne correspondent pas','err'); return; }
+    if(nouveau === ancien){ toast('Choisissez un code différent','err'); return; }
+
+    localStorage.setItem(PIN_KEY, nouveau);
+    toast('Code PIN modifié ✓');
+    closeSheet();
+  });
+}
+
+function openStockDepartSheet(){
+  const sd = DB.stockDepart;
+  sheet(`
+    <h2>🎬 Stock de départ</h2>
+    <div class="s-sub">${sd ? 'Modifiez vos quantités de départ. Le stock actuel se recalcule aussitôt.' : 'Saisissez les quantités que vous avez actuellement en stock.'}</div>
+    ${sd && sd.modifie ? `<div class="hint" style="margin-bottom:10px">Défini le ${dateFr(sd.date)} · modifié le ${dateFr(sd.modifie)}</div>` : ''}
+    <div id="sdList">
+      ${DB.categories.map(c=>{
+        const sdq = (sd && sd.lignes && (c.id in sd.lignes)) ? sd.lignes[c.id] : '';
+        const stkActuel = stockCategorie(c.id);
+        return `<div class="cat-row">
+          <span class="cat-dot" style="background:${c.couleur}"></span>
+          <div class="cat-info"><div class="cat-name">${c.nom}</div>
+          <div class="cat-meta">${c.prix} ${DB.parametres.devise} · stock actuel: ${fmt(stkActuel)}</div></div>
+          <input class="cat-input" type="number" inputmode="numeric" min="0"
+            data-cat="${c.id}" placeholder="0" value="${sdq}">
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="hint" style="margin-top:8px">Mettez 0 ou laissez vide pour les catégories sans stock de départ.</div>
+    <div class="btn-group" style="margin-top:16px">
+      ${sd ? `<button class="btn btn-danger btn-sm" id="sdDel" style="flex:0 0 auto">🗑️</button>` : ''}
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" id="sdSave">Enregistrer</button>
+    </div>
+  `);
+
+  $('#sdSave').addEventListener('click', ()=>{
+    const lignes = {};
+    document.querySelectorAll('#sdList .cat-input').forEach(i=>{
+      const v = Number(i.value)||0;
+      if(v > 0) lignes[i.dataset.cat] = v;
+    });
+    definirStockDepart(lignes);
+    toast('Stock de départ enregistré ✓');
+    closeSheet();
+    go('accueil');
+  });
+
+  $('#sdDel')?.addEventListener('click', ()=>{
+    sheet(`
+      <h2>🗑️ Supprimer le stock de départ ?</h2>
+      <div class="s-sub">Le stock actuel sera recalculé sans ce point de départ. Vos achats et inventaires restent intacts.</div>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+        <button class="btn btn-danger" id="sdDelOk">Oui, supprimer</button>
+      </div>`);
+    $('#sdDelOk').addEventListener('click', ()=>{
+      supprimerStockDepart();
+      toast('Stock de départ supprimé');
+      closeSheet();
+      go('accueil');
+    });
+  });
+}
+
+function openCategorieContenu(catId){
+  const cat = DB.categories.find(c=>c.id===catId);
+  if(!cat) return;
+  const produits = produitsParCategorie(catId);
+  sheet(`
+    <h2><span class="cat-dot" style="background:${cat.couleur};display:inline-block;vertical-align:middle;margin-right:8px"></span>${cat.nom}</h2>
+    <div class="s-sub">${cat.prix} ${DB.parametres.devise} • ${produits.length} produit(s) • stock ${fmt(stockCategorie(catId))}</div>
+
+    ${produits.length ? `
+    <div id="prodList2">
+      ${produits.map(p=>`
+        <div class="cat-row" style="cursor:pointer" onclick="openProduitSheet('${p.id}')">
+          <span class="cat-dot" style="background:${cat.couleur}"></span>
+          <div class="cat-info"><div class="cat-name">${p.nom}</div>
+          <div class="cat-meta">${p.nbAchats} achat(s)${p.dernierPrix?' • dernier '+fmt(p.dernierPrix)+' '+DB.parametres.devise:''}</div></div>
+          <span style="color:var(--texte-faible)">›</span>
+        </div>`).join('')}
+    </div>` : `
+    <div class="empty"><div class="e-ic">📦</div><div>Aucun produit dans cette catégorie</div>
+    <div style="font-size:13px;margin-top:6px">Ils apparaissent quand vous enregistrez un achat</div></div>`}
+
+    <div class="btn-group" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
+      <button class="btn btn-primary" onclick="openCatEdit('${catId}')">✏️ Modifier la catégorie</button>
+    </div>
+  `);
+}
+
+function openProduitSheet(prodId){
+  const p = DB.produits.find(x=>x.id===prodId);
+  if(!p) return;
+  const cats = DB.categories;
+  const achatsProd = DB.achats.filter(a=>a.produit.toUpperCase()===p.nom.toUpperCase());
+  sheet(`
+    <h2>📦 ${p.nom}</h2>
+    <div class="s-sub">${achatsProd.length} achat(s) enregistré(s)</div>
+
+    <div class="field">
+      <label>Nom du produit</label>
+      <input class="input" id="pNom" value="${p.nom}">
+    </div>
+
+    <div class="field">
+      <label>Catégorie</label>
+      <select class="input" id="pCat">
+        ${cats.map(c=>`<option value="${c.id}" ${c.id===p.categorieId?'selected':''}>${c.nom} — ${c.prix}${DB.parametres.devise}</option>`).join('')}
+      </select>
+      <div class="hint">Déplacer ce produit vers une autre catégorie mettra à jour tous ses achats.</div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-danger btn-sm" id="pDel" style="flex:0 0 auto">🗑️</button>
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-primary" id="pSave">Enregistrer</button>
+    </div>
+  `);
+
+  $('#pSave').addEventListener('click', ()=>{
+    const nom = $('#pNom').value.trim();
+    const cat = $('#pCat').value;
+    if(!nom){ toast('Indiquez le nom','err'); return; }
+    if(nom !== p.nom) renommerProduit(p.id, nom);
+    if(cat !== p.categorieId) deplacerProduit(p.id, cat);
+    toast('Produit mis à jour ✓');
+    closeSheet();
+    go('plus');
+  });
+
+  $('#pDel').addEventListener('click', ()=>{
+    const r = supprimerProduit(p.id);
+    if(!r.ok){ toast(r.msg,'err'); return; }
+    toast('Produit supprimé');
+    closeSheet();
+    go('plus');
+  });
+}
+
+function openCatEdit(catId){
+  const cat = catId ? DB.categories.find(c=>c.id===catId) : null;
+  const couleurs = ['#5EEAD4','#60A5FA','#A78BFA','#FBBF24','#FB923C','#F472B6','#34D399','#F87171','#818CF8','#FACC15'];
+  sheet(`
+    <h2>${cat?'✏️ Modifier':'🏷️ Nouvelle'} catégorie</h2>
+    <div class="field"><label>Nom</label>
+      <input class="input" id="cNom" value="${cat?cat.nom:''}" placeholder="Ex: Grand Canette"></div>
+    <div class="field"><label>Prix de vente (${DB.parametres.devise})</label>
+      <input class="input" id="cPrix" type="number" inputmode="numeric" value="${cat?cat.prix:''}" placeholder="500"></div>
+    <div class="field"><label>Couleur</label>
+      <div class="swipe-x" id="colorPick">
+        ${couleurs.map(col=>`<button class="chip ${cat&&cat.couleur===col?'on':''}" data-col="${col}"
+          style="background:${col};width:36px;height:36px;border-radius:50%;padding:0"></button>`).join('')}
+      </div>
+    </div>
+    <div class="btn-group">
+      ${cat?`<button class="btn btn-danger btn-sm" id="cDel" style="flex:0 0 auto">🗑️</button>`:''}
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-primary" id="cSave">Enregistrer</button>
+    </div>
+  `);
+
+  let selCol = cat ? cat.couleur : couleurs[0];
+  document.querySelectorAll('#colorPick .chip').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      selCol = b.dataset.col;
+      document.querySelectorAll('#colorPick .chip').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+    });
+  });
+
+  $('#cSave').addEventListener('click', ()=>{
+    const nom = $('#cNom').value.trim();
+    const prix = Number($('#cPrix').value)||0;
+    if(!nom){ toast('Indiquez le nom','err'); return; }
+    if(prix<=0){ toast('Indiquez le prix','err'); return; }
+    if(cat){
+      cat.nom = nom; cat.prix = prix; cat.couleur = selCol;
+    } else {
+      DB.categories.push({id:uid('cat'), nom, prix, couleur:selCol});
+    }
+    sauverDB(); toast('Catégorie enregistrée ✓'); closeSheet(); go('plus');
+  });
+
+  $('#cDel')?.addEventListener('click', ()=>{
+    // vérifier qu'aucun achat n'utilise cette catégorie
+    const used = DB.achats.some(a=>a.categorieId===cat.id);
+    if(used){ toast('Catégorie utilisée par des achats','err'); return; }
+    DB.categories = DB.categories.filter(c=>c.id!==cat.id);
+    sauverDB(); toast('Catégorie supprimée'); closeSheet(); go('plus');
+  });
+}
+
+// ============================================================
+//  DÉMARRAGE
+// ============================================================
+chargerDB();
+demanderPersistance();
+renderLogin();
+if(window._donneesRecuperees){
+  setTimeout(()=> toast('Données récupérées depuis la sauvegarde ✓','ok'), 600);
+}
+
+/* ===== actions2.js ===== */
+/* ============================================================
+   FRIGO — Actions Caisse / Fournisseurs / Mouvements
+   ============================================================ */
+
+// Binds vides (les pages utilisent onclick inline)
+function bindCaisse(){}
+function bindFournisseurs(){}
+function bindBenefice(){}
+
+// ---------- DÉPENSE (standalone) ----------
+function openDepenseSheet(){
+  sheet(`
+    <h2>💸 Nouvelle dépense</h2>
+    <div class="field"><label>Motif</label><input class="input" id="dMotif" placeholder="Ex: Transport, glace, électricité..."></div>
+    <div class="field"><label>Montant</label><input class="input" id="dMontant" type="number" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label>Date</label><input class="input" id="dDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" id="dSave">Enregistrer</button>
+    </div>`);
+  $('#dSave').addEventListener('click', ()=>{
+    const motif = $('#dMotif').value.trim();
+    const montant = Number($('#dMontant').value)||0;
+    if(!motif){ toast('Indiquez le motif','err'); return; }
+    if(montant<=0){ toast('Montant invalide','err'); return; }
+    DB.depenses.push({id:uid('dep'), date:$('#dDate').value||auj(), motif, montant});
+    sauverDB(); toast('Dépense enregistrée ✓'); closeSheet();
+    go(PAGE==='caisse'?'caisse':'plus');
+  });
+}
+
+// ---------- VERSEMENT (standalone) ----------
+function openVersementSheet(){
+  sheet(`
+    <h2>💵 Versement du vendeur</h2>
+    <div class="s-sub">Argent remis par le vendeur (entre en caisse)</div>
+    <div class="field"><label>Montant</label><input class="input" id="vMontant" type="number" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label>Note (optionnel)</label><input class="input" id="vNote" placeholder="Ex: recette de la semaine"></div>
+    <div class="field"><label>Date</label><input class="input" id="vDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-primary" id="vSave">Enregistrer</button>
+    </div>`);
+  $('#vSave').addEventListener('click', ()=>{
+    const montant = Number($('#vMontant').value)||0;
+    if(montant<=0){ toast('Montant invalide','err'); return; }
+    DB.versements.push({id:uid('vers'), date:$('#vDate').value||auj(), montant, note:$('#vNote').value.trim()});
+    sauverDB(); toast('Versement enregistré ✓'); closeSheet();
+    go(PAGE==='caisse'?'caisse':'plus');
+  });
+}
+
+// ---------- FICHE FOURNISSEUR (détail + paiement) ----------
+function openFournisseurSheet(fId){
+  const f = infosFournisseur(fId);
+  if(!f) return;
+  const achatsNonSoldes = f.achats.filter(a=>(a.prixGlobal-(a.montantPaye||0))>0)
+    .sort((a,b)=> a.date<b.date?-1:1);
+  sheet(`
+    <h2>🏢 ${f.nom}</h2>
+    <div class="s-sub">${f.nbAchats} achat(s) • ${f.paiements.length} paiement(s)</div>
+
+    <div class="metrics" style="margin-bottom:16px">
+      <div class="metric ${f.solde>0?'danger':'accent'}">
+        <div class="m-label">${f.solde>0?'Reste à payer':'Compte soldé'}</div>
+        <div class="m-value mono">${fmt(f.solde)} ${DB.parametres.devise}</div>
+      </div>
+      <div class="metric">
+        <div class="m-label">Total payé</div>
+        <div class="m-value mono">${fmt(f.totalPaye)}</div>
+      </div>
+    </div>
+
+    ${f.solde>0 ? `
+    <div class="field">
+      <label>Payer ce fournisseur</label>
+      <input class="input" id="payMontant" type="number" inputmode="numeric" placeholder="Montant à payer" max="${f.solde}">
+    </div>
+    <div class="field">
+      <label>Date du paiement</label>
+      <input class="input" id="payDate" type="date" value="${auj()}">
+    </div>
+    <div class="btn-group" style="margin-bottom:8px">
+      <button class="btn btn-ghost" onclick="payerTout('${fId}')">Payer tout (${fmt(f.solde)})</button>
+      <button class="btn btn-primary" id="payBtn">Enregistrer le paiement</button>
+    </div>
+    <div class="divider"></div>
+    ` : `<div class="card" style="background:rgba(74,222,128,.08);border-color:var(--vert);margin-bottom:12px">
+      <div style="text-align:center;color:var(--vert);font-weight:700">✓ Ce fournisseur est entièrement payé</div>
+    </div>`}
+
+    <div class="card-title" style="font-size:14px;margin-bottom:8px">📥 Achats</div>
+    <div class="tbl-wrap" style="margin-bottom:16px"><table class="tbl">
+      <tr><th>Date</th><th>Produit</th><th class="num">Total</th><th class="num">Reste</th></tr>
+      ${f.achats.sort((a,b)=>b.date<a.date?-1:1).map(a=>{
+        const reste = a.prixGlobal-(a.montantPaye||0);
+        return `<tr>
+          <td style="font-size:12px;color:var(--texte-doux)">${dateFr(a.date)}</td>
+          <td>${a.produit}</td>
+          <td class="num">${fmt(a.prixGlobal)}</td>
+          <td class="num" style="color:${reste>0?'var(--rouge)':'var(--vert)'}">${reste>0?fmt(reste):'✓'}</td>
+        </tr>`;
+      }).join('')}
+    </table></div>
+
+    ${f.paiements.length ? `
+    <div class="card-title" style="font-size:14px;margin-bottom:8px">💰 Paiements</div>
+    <div class="tbl-wrap"><table class="tbl">
+      ${f.paiements.sort((a,b)=>b.date<a.date?-1:1).map(p=>`
+        <tr>
+          <td style="font-size:12px;color:var(--texte-doux)">${dateFr(p.date)}</td>
+          <td>${p.note||'Paiement'}</td>
+          <td class="num" style="color:var(--vert)">${fmt(p.montant)}</td>
+          <td style="width:30px"><button class="btn btn-sm btn-ghost" onclick="supprimerPaiementUI('${p.id}','${fId}')" style="padding:4px 8px">🗑️</button></td>
+        </tr>`).join('')}
+    </table></div>` : ''}
+
+    <div class="btn-group" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
+    </div>
+  `);
+
+  const payBtn = $('#payBtn');
+  if(payBtn){
+    payBtn.addEventListener('click', ()=>{
+      const montant = Number($('#payMontant').value)||0;
+      const date = $('#payDate').value || auj();
+      if(montant<=0){ toast('Indiquez le montant','err'); return; }
+      if(montant > f.solde){ toast('Montant supérieur au dû','err'); return; }
+      enregistrerPaiement({date, fournisseurId:fId, montant, note:'Paiement'});
+      toast('Paiement enregistré ✓');
+      openFournisseurSheet(fId); // recharger la fiche
+    });
+  }
+}
+
+function payerTout(fId){
+  const f = infosFournisseur(fId);
+  if(!f || f.solde<=0) return;
+  const date = ($('#payDate') && $('#payDate').value) || auj();
+  enregistrerPaiement({date, fournisseurId:fId, montant:f.solde, note:'Solde total'});
+  toast('Fournisseur soldé ✓');
+  openFournisseurSheet(fId);
+}
+
+function supprimerPaiementUI(payId, fId){
+  supprimerPaiement(payId);
+  toast('Paiement supprimé');
+  openFournisseurSheet(fId);
+}
+
+// ---------- SOLDE DE DÉPART CAISSE ----------
+function openSoldeDepartCaisseSheet(){
+  sheet(`
+    <h2>🏦 Solde de départ caisse</h2>
+    <div class="s-sub">L'argent que vous avez déjà en caisse au démarrage. Il apparaît comme première ligne des mouvements.</div>
+    <div class="field">
+      <label>Montant en caisse (${DB.parametres.devise})</label>
+      <input class="input" id="sdcMontant" type="number" inputmode="numeric" min="0" placeholder="0" value="${DB.soldeDepartCaisse||''}">
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" id="sdcSave">Enregistrer</button>
+    </div>
+  `);
+  $('#sdcSave').addEventListener('click', ()=>{
+    const montant = Number($('#sdcMontant').value)||0;
+    definirSoldeDepartCaisse(montant);
+    toast('Solde de départ caisse enregistré ✓');
+    closeSheet();
+    go('caisse');
+  });
+}
+
+// Mode de paiement à l'achat (tout / rien / partiel)
+function setPayMode(mode){
+  window._payMode = mode;
+  const inp = document.getElementById('aPaye');
+  const hint = document.getElementById('payHint');
+  document.getElementById('payTout')?.classList.toggle('on', mode==='tout');
+  document.getElementById('payRien')?.classList.toggle('on', mode==='rien');
+  document.getElementById('payPartiel')?.classList.toggle('on', mode==='partiel');
+  if(inp){
+    inp.style.display = mode==='partiel' ? 'block' : 'none';
+  }
+  if(hint){
+    if(mode==='tout') hint.textContent = 'Toute la facture est payée maintenant.';
+    else if(mode==='rien') hint.textContent = 'Achat à crédit : à payer plus tard.';
+    else hint.textContent = 'Indiquez le montant payé maintenant.';
+  }
+}
+
+</script>
+</body>
+</html>
