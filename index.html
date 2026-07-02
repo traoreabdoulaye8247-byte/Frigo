@@ -1047,11 +1047,38 @@ function renderLogin(){
   }
 }
 
+let _unlocked = false;
+let _hiddenAt = 0;
+
 function enterApp(){
+  _unlocked = true;
   $('#login').style.display='none';
   $('#app').style.display='block';
   renderApp();
 }
+
+// Verrouiller l'application (redemande le code)
+function lockApp(){
+  const aPin = localStorage.getItem(PIN_KEY);
+  if(!aPin){ return; }        // pas de code défini → rien à verrouiller
+  _unlocked = false;
+  $('#app').style.display = 'none';
+  $('#login').style.display = 'flex';
+  renderLogin();
+}
+
+// Verrouillage automatique quand on quitte puis revient dans l'app
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'hidden'){
+    _hiddenAt = Date.now();
+  } else if(document.visibilityState === 'visible'){
+    if(_unlocked && _hiddenAt){
+      const absence = Date.now() - _hiddenAt;
+      // re-verrouille si l'app est restée en arrière-plan plus de 10 secondes
+      if(absence > 10000){ lockApp(); }
+    }
+  }
+});
 
 // ============================================================
 //  STRUCTURE PRINCIPALE
@@ -1067,7 +1094,12 @@ function renderApp(){
           <div class="tb-sub">Gestion boissons</div>
         </div>
       </div>
-      <div class="tb-date">${dateFr(auj())}</div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <button onclick="lockApp()" title="Verrouiller"
+          style="background:var(--ardoise-2);border:1px solid var(--bord);color:var(--texte);
+          width:38px;height:38px;border-radius:11px;font-size:17px;cursor:pointer">🔒</button>
+        <div class="tb-date">${dateFr(auj())}</div>
+      </div>
     </div>
     <div id="pageContent"></div>
     <button class="fab" id="fab">+</button>
@@ -1617,7 +1649,9 @@ function pagePlus(){
 
     <div class="card">
       <div class="card-head"><div class="card-title">🔐 Sécurité</div></div>
-      <button class="btn btn-ghost" id="btnChangePin">🔑 Changer mon code PIN</button>
+      <button class="btn btn-ghost" id="btnChangePin" style="margin-bottom:10px">🔑 Changer mon code PIN</button>
+      <button class="btn btn-ghost" onclick="lockApp()">🔒 Verrouiller maintenant</button>
+      <div class="hint" style="margin-top:8px">Le code est aussi redemandé automatiquement quand vous rouvrez l'app.</div>
     </div>
 
     <div class="card">
