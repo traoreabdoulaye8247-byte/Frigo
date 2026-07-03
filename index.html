@@ -271,7 +271,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 <script>
-/* ===== JSZip (lecture Excel) ===== */
+/* ===== JSZip ===== */
 /*!
 
 JSZip v3.10.1 - A JavaScript class for generating and reading zip files
@@ -328,6 +328,15 @@ function dbVide(){
     inventaires: [],   // {id, date, lignes:[{categorieId, stockAvant, achats, compte, vendu, prix, montant}], totalCA}
     depenses: [],      // {id, date, motif, montant}
     versements: [],    // {id, date, montant, note}  (argent remis par le vendeur)
+    clients: [],       // {id, nom, tel}
+    creances: [],      // {id, date, clientId, montant, note}  (crédit accordé au client)
+    paiementsClients: [], // {id, date, clientId, montant, note}  (remboursement du client)
+    corbeille: [],     // {id, type, data, dateSuppr, libelle}
+    regularisations: [], // {id, date, user, motif, lignes:[{categorieId, ancienStock, nouveauStock, ecart}]}
+    emprunts: [],      // {id, date, preteur, motif, montant, montantARembourser}
+    remboursementsEmprunt: [], // {id, date, empruntId, montant, note}
+    cafeAchats: [],    // {id, date, article, montant, fournisseur, note}  (café + accessoires)
+    cafeVentes: [],    // {id, date, montant, note}  (vente café = versement du vendeur)
     parametres: { boutique: 'Mon Frigo', devise: 'F' },
   };
 }
@@ -362,7 +371,18 @@ function chargerDB(){
   if(!DB.inventaires) DB.inventaires = [];
   if(!DB.depenses) DB.depenses = [];
   if(!DB.versements) DB.versements = [];
+  if(!DB.clients) DB.clients = [];
+  if(!DB.creances) DB.creances = [];
+  if(!DB.paiementsClients) DB.paiementsClients = [];
+  if(!DB.corbeille) DB.corbeille = [];
+  if(!DB.regularisations) DB.regularisations = [];
+  if(!DB.emprunts) DB.emprunts = [];
+  if(!DB.remboursementsEmprunt) DB.remboursementsEmprunt = [];
+  if(!DB.cafeAchats) DB.cafeAchats = [];
+  if(!DB.cafeVentes) DB.cafeVentes = [];
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
+  // seuil d'alerte par catégorie (défaut 15)
+  DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
 }
 
 function sauverDB(){
@@ -419,7 +439,16 @@ function stockCategorie(catId){
       if(l.categorieId === catId) sorties += l.vendu;
     }
   }
-  return entrees - sorties;
+  // corrections de stock (régularisations) : réalignent le théorique sur le physique
+  let ajust = 0;
+  if(DB.regularisations){
+    for(const r of DB.regularisations){
+      for(const l of r.lignes){
+        if(l.categorieId === catId) ajust += l.ecart;
+      }
+    }
+  }
+  return entrees - sorties + ajust;
 }
 
 /* Coût moyen unitaire (PMP) d'une catégorie — utilisé seulement pour la valeur du stock.
@@ -565,6 +594,8 @@ function modifierAchat(id, {date, fournisseur, produitNom, categorieId, cartons,
 
 // Supprimer un achat (et ses paiements liés)
 function supprimerAchat(id){
+  const a = DB.achats.find(x=>x.id===id);
+  if(a) versCorbeille('achat', a, 'Achat : '+a.produit+' ('+fmt(a.prixGlobal)+' '+DB.parametres.devise+')');
   DB.achats = DB.achats.filter(a=>a.id!==id);
   DB.paiements = DB.paiements.filter(p=>p.achatId!==id);
   sauverDB();
@@ -697,8 +728,10 @@ function analyserCSVAchats(texte){
     if(!produitNom){ erreurs.push(`Ligne ${r+1}: produit manquant`); continue; }
     if(prix<=0){ erreurs.push(`Ligne ${r+1}: prix invalide`); continue; }
     // catégorie
-    let cat = iCat>=0 ? categorieParNom(c[iCat]) : null;
-    if(!cat) cat = DB.categories[0]; // défaut si non reconnue
+    const catBrut = iCat>=0 ? (c[iCat]||'').trim() : '';
+    let cat = iCat>=0 ? categorieParNom(catBrut) : null;
+    const categorieInconnue = (catBrut !== '' && !cat);
+    if(!cat) cat = DB.categories[0]; // défaut provisoire si non reconnue
     // paiement
     const payeTxt = (iPaye>=0 ? (c[iPaye]||'') : '').toString().trim().toLowerCase();
     let paiement = 'tout';
@@ -710,6 +743,8 @@ function analyserCSVAchats(texte){
       produitNom,
       categorieId: cat ? cat.id : (DB.categories[0] && DB.categories[0].id),
       categorieNom: cat ? cat.nom : '?',
+      categorieNomBrut: catBrut,
+      categorieInconnue,
       cartons: iCart>=0 ? versNombre(c[iCart]) : 0,
       contenu: iCont>=0 ? (versNombre(c[iCont])||24) : 24,
       prixGlobal: prix,
@@ -718,7 +753,9 @@ function analyserCSVAchats(texte){
       montantPartiel: paiement==='partiel' ? versNombre(payeTxt) : 0
     });
   }
-  return { lignes, erreurs };
+  // liste des catégories inconnues (noms uniques)
+  const inconnues = [...new Set(lignes.filter(l=>l.categorieInconnue).map(l=>l.categorieNomBrut))];
+  return { lignes, erreurs, categoriesInconnues: inconnues };
 }
 
 /* Importer réellement les lignes analysées -> crée les achats */
@@ -1008,6 +1045,8 @@ function modifierDateInventaire(id, nouvelleDate){
 
 // Supprimer un inventaire (réintègre le stock vendu)
 function supprimerInventaire(id){
+  const inv = DB.inventaires.find(i=>i.id===id);
+  if(inv) versCorbeille('inventaire', inv, 'Inventaire du '+dateFr(inv.date)+' ('+fmt(inv.totalCA)+' '+DB.parametres.devise+')');
   DB.inventaires = DB.inventaires.filter(i=>i.id!==id);
   sauverDB();
 }
@@ -1080,6 +1119,12 @@ function mouvementsCaisse(){
   for(const d of DB.depenses){
     mvts.push({ date: d.date, heure:'', type:'depense', sens:'-',
       libelle:'Dépense — '+d.motif, montant: d.montant, ref: d.id });
+  }
+  // Remboursements d'emprunt (sortie de caisse)
+  for(const r of (DB.remboursementsEmprunt||[])){
+    const e = (DB.emprunts||[]).find(x=>x.id===r.empruntId);
+    mvts.push({ date: r.date, heure:'', type:'remboursement', sens:'-',
+      libelle:'Remboursement emprunt'+(e?' — '+e.preteur:''), montant: r.montant, ref: r.id });
   }
   // Trier par date puis heure (le départ reste en tête avec sa date 0000)
   mvts.sort((a,b)=>{
@@ -1190,10 +1235,394 @@ function periodeMois(dateRef){
   return { debut: debut.toISOString().slice(0,10), fin: fin.toISOString().slice(0,10) };
 }
 
-function statutStock(stk){
+function statutStock(stk, seuil){
+  const s = (seuil!=null) ? seuil : 15;
   if(stk <= 0) return {pill:'out', label:'Rupture'};
-  if(stk <= 15) return {pill:'low', label:'Faible'};
+  if(stk <= s) return {pill:'low', label:'Faible'};
   return {pill:'ok', label:'OK'};
+}
+
+// ============================================================
+//  ALERTES STOCK FAIBLE (seuil par catégorie)
+// ============================================================
+function categoriesEnAlerte(){
+  return DB.categories
+    .map(c=>({ cat:c, stock: stockCategorie(c.id), seuil: (c.seuil!=null?c.seuil:15) }))
+    .filter(x=> x.stock <= x.seuil)
+    .sort((a,b)=> a.stock - b.stock);
+}
+
+// ============================================================
+//  RÉGULARISATION DE STOCK (réaligner théorique sur physique)
+// ============================================================
+/* Écart pour une catégorie : physique - théorique */
+function ecartCategorie(catId, physique){
+  return (Number(physique)||0) - stockCategorie(catId);
+}
+
+/* Aperçu des écarts à partir des comptes physiques saisis
+   comptes = { catId: physique }  -> [{categorieId, nom, theorique, physique, ecart}] */
+function apercuRegularisation(comptes){
+  const res = [];
+  for(const c of DB.categories){
+    if(!(c.id in comptes)) continue;
+    const phys = Number(comptes[c.id]);
+    if(comptes[c.id]==='' || comptes[c.id]==null || isNaN(phys)) continue;
+    const theo = stockCategorie(c.id);
+    res.push({ categorieId:c.id, nom:c.nom, theorique:theo, physique:phys, ecart: phys-theo });
+  }
+  return res;
+}
+
+/* Enregistrer une régularisation.
+   comptes = {catId: physique}, motif = texte, user = nom
+   Ne touche NI aux achats NI aux ventes : ajoute seulement une correction. */
+function regulariserStock({comptes, motif, user, date}){
+  const lignes = [];
+  for(const c of DB.categories){
+    if(!(c.id in comptes)) continue;
+    const val = comptes[c.id];
+    if(val==='' || val==null || isNaN(Number(val))) continue;
+    const phys = Number(val);
+    const theo = stockCategorie(c.id);
+    const ecart = phys - theo;
+    if(ecart === 0) continue;          // pas d'écart -> rien à régulariser
+    lignes.push({ categorieId:c.id, nom:c.nom, ancienStock:theo, nouveauStock:phys, ecart });
+  }
+  if(lignes.length===0) return null;    // aucun écart
+  const reg = {
+    id: uid('reg'), date: date||auj(),
+    user: (user||'').trim() || 'Gérant',
+    motif: (motif||'').trim() || 'Non précisé',
+    lignes
+  };
+  DB.regularisations.push(reg);
+  sauverDB();
+  return reg;
+}
+
+function historiqueRegularisations(){
+  return [...(DB.regularisations||[])].sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function supprimerRegularisation(id){
+  const r = (DB.regularisations||[]).find(x=>x.id===id);
+  if(r) versCorbeille('regularisation', r, 'Régularisation du '+dateFr(r.date));
+  DB.regularisations = (DB.regularisations||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+
+// ============================================================
+//  CLIENTS À CRÉDIT (qui vous doit de l'argent)
+// ============================================================
+function trouverOuCreerClient(nom){
+  const n = (nom||'').trim();
+  if(!n) return null;
+  let c = DB.clients.find(x=>x.nom.toUpperCase()===n.toUpperCase());
+  if(!c){ c = { id: uid('cli'), nom: n, tel: '' }; DB.clients.push(c); }
+  return c;
+}
+
+/* Accorder un crédit à un client (il prend pour X francs sans payer) */
+function ajouterCreance({date, clientNom, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const c = trouverOuCreerClient(clientNom);
+  if(!c) return null;
+  const cr = { id: uid('cre'), date: date||auj(), clientId: c.id, montant, note: (note||'').trim() };
+  DB.creances.push(cr);
+  sauverDB();
+  return cr;
+}
+
+/* Enregistrer un remboursement du client */
+function payerClient({date, clientId, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0 || !clientId) return null;
+  const p = { id: uid('rcli'), date: date||auj(), clientId, montant, note:(note||'').trim() };
+  DB.paiementsClients.push(p);
+  sauverDB();
+  return p;
+}
+
+function soldeClient(clientId){
+  let du = 0, paye = 0;
+  for(const cr of DB.creances){ if(cr.clientId===clientId) du += cr.montant; }
+  for(const p of DB.paiementsClients){ if(p.clientId===clientId) paye += p.montant; }
+  return du - paye;
+}
+
+function infosClient(clientId){
+  const c = DB.clients.find(x=>x.id===clientId);
+  if(!c) return null;
+  const creances = DB.creances.filter(x=>x.clientId===clientId);
+  const paiements = DB.paiementsClients.filter(x=>x.clientId===clientId);
+  const totalCredit = creances.reduce((s,x)=>s+x.montant,0);
+  const totalPaye = paiements.reduce((s,x)=>s+x.montant,0);
+  return { ...c, creances, paiements, totalCredit, totalPaye, solde: totalCredit-totalPaye };
+}
+
+function totalCreancesClients(){
+  return DB.clients.reduce((s,c)=>s+soldeClient(c.id),0);
+}
+
+// ============================================================
+//  EMPRUNTS / PRÊTS (argent que VOUS devez)
+// ============================================================
+/* Créer un emprunt. montantARembourser = total à rembourser (avec intérêts éventuels);
+   par défaut = montant emprunté. */
+function ajouterEmprunt({date, preteur, motif, montant, montantARembourser}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  let total = Number(montantARembourser)||0;
+  if(total<=0) total = montant;   // pas d'intérêts précisés
+  const e = {
+    id: uid('emp'), date: date||auj(),
+    preteur: (preteur||'').trim() || 'Prêteur',
+    motif: (motif||'').trim(),
+    montant, montantARembourser: total
+  };
+  DB.emprunts.push(e);
+  sauverDB();
+  return e;
+}
+
+/* Enregistrer un remboursement (sort de la caisse) */
+function rembourserEmprunt({date, empruntId, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0 || !empruntId) return null;
+  const r = { id: uid('remb'), date: date||auj(), empruntId, montant, note:(note||'').trim() };
+  DB.remboursementsEmprunt.push(r);
+  sauverDB();
+  return r;
+}
+
+function soldeEmprunt(empruntId){
+  const e = DB.emprunts.find(x=>x.id===empruntId);
+  if(!e) return 0;
+  let rembourse = 0;
+  for(const r of DB.remboursementsEmprunt){ if(r.empruntId===empruntId) rembourse += r.montant; }
+  return e.montantARembourser - rembourse;
+}
+
+function infosEmprunt(empruntId){
+  const e = DB.emprunts.find(x=>x.id===empruntId);
+  if(!e) return null;
+  const remboursements = DB.remboursementsEmprunt.filter(r=>r.empruntId===empruntId)
+    .sort((a,b)=> a.date<b.date?1:-1);
+  const totalRembourse = remboursements.reduce((s,r)=>s+r.montant,0);
+  return { ...e, remboursements, totalRembourse, solde: e.montantARembourser - totalRembourse };
+}
+
+function totalDettesEmprunts(){
+  return DB.emprunts.reduce((s,e)=> s + Math.max(0, soldeEmprunt(e.id)), 0);
+}
+
+function supprimerEmprunt(id){
+  const e = DB.emprunts.find(x=>x.id===id);
+  if(e) versCorbeille('emprunt', {emprunt:e, remboursements: DB.remboursementsEmprunt.filter(r=>r.empruntId===id)},
+    'Emprunt : '+e.preteur+' ('+fmt(e.montant)+' '+DB.parametres.devise+')');
+  DB.emprunts = DB.emprunts.filter(x=>x.id!==id);
+  DB.remboursementsEmprunt = DB.remboursementsEmprunt.filter(r=>r.empruntId!==id);
+  sauverDB();
+}
+
+// ============================================================
+//  SUIVI CAFÉ (activité séparée : achats, ventes, résultat)
+// ============================================================
+/* Vente café = argent rapporté par le vendeur (versement) */
+function ajouterVenteCafe({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const v = { id: uid('cv'), date: date||auj(), montant, note:(note||'').trim() };
+  DB.cafeVentes.push(v);
+  sauverDB();
+  return v;
+}
+
+/* Achat café + accessoires */
+function ajouterAchatCafe({date, article, montant, fournisseur, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const a = { id: uid('ca'), date: date||auj(), article:(article||'').trim()||'Café', montant,
+    fournisseur:(fournisseur||'').trim(), note:(note||'').trim() };
+  DB.cafeAchats.push(a);
+  sauverDB();
+  return a;
+}
+
+function supprimerVenteCafe(id){
+  const v = DB.cafeVentes.find(x=>x.id===id);
+  if(v) versCorbeille('venteCafe', v, 'Vente café : '+fmt(v.montant)+' '+DB.parametres.devise);
+  DB.cafeVentes = DB.cafeVentes.filter(x=>x.id!==id);
+  sauverDB();
+}
+function supprimerAchatCafe(id){
+  const a = DB.cafeAchats.find(x=>x.id===id);
+  if(a) versCorbeille('achatCafe', a, 'Achat café : '+a.article+' ('+fmt(a.montant)+' '+DB.parametres.devise+')');
+  DB.cafeAchats = DB.cafeAchats.filter(x=>x.id!==id);
+  sauverDB();
+}
+
+/* Statistiques café sur une période (debut/fin en AAAA-MM-JJ, ou tout si non fourni) */
+function statsCafe(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  let ventes = 0, achats = 0;
+  const ventesListe = [], achatsListe = [];
+  for(const v of DB.cafeVentes){ if(dans(v.date)){ ventes += v.montant; ventesListe.push(v); } }
+  for(const a of DB.cafeAchats){ if(dans(a.date)){ achats += a.montant; achatsListe.push(a); } }
+  return { ventes, achats, resultat: ventes - achats, ventesListe, achatsListe };
+}
+
+// ============================================================
+//  CORBEILLE (annuler une suppression)
+// ============================================================
+/* Met un élément supprimé dans la corbeille (au lieu de le perdre) */
+function versCorbeille(type, data, libelle){
+  DB.corbeille.push({ id: uid('trash'), type, data: JSON.parse(JSON.stringify(data)), dateSuppr: auj(), libelle: libelle||'' });
+  // limiter la corbeille à 50 éléments
+  if(DB.corbeille.length > 50) DB.corbeille = DB.corbeille.slice(-50);
+}
+
+/* Restaurer un élément de la corbeille */
+function restaurerCorbeille(id){
+  const item = DB.corbeille.find(x=>x.id===id);
+  if(!item) return false;
+  const d = item.data;
+  if(item.type==='achat'){ DB.achats.push(d); }
+  else if(item.type==='inventaire'){ DB.inventaires.push(d); DB.inventaires.sort((a,b)=>a.date<b.date?-1:1); }
+  else if(item.type==='depense'){ DB.depenses.push(d); }
+  else if(item.type==='versement'){ DB.versements.push(d); }
+  else if(item.type==='creance'){ DB.creances.push(d); }
+  else if(item.type==='paiementClient'){ DB.paiementsClients.push(d); }
+  else if(item.type==='regularisation'){ DB.regularisations.push(d); }
+  else if(item.type==='emprunt'){ if(d.emprunt){ DB.emprunts.push(d.emprunt); (d.remboursements||[]).forEach(r=>DB.remboursementsEmprunt.push(r)); } }
+  else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
+  else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
+  DB.corbeille = DB.corbeille.filter(x=>x.id!==id);
+  sauverDB();
+  return true;
+}
+
+function viderCorbeille(){ DB.corbeille = []; sauverDB(); }
+
+// ============================================================
+//  RECHERCHE (achats, produits, fournisseurs, clients)
+// ============================================================
+function rechercher(terme){
+  const t = (terme||'').trim().toLowerCase();
+  if(!t) return { achats:[], produits:[], fournisseurs:[], clients:[] };
+  const achats = DB.achats.filter(a=>
+    a.produit.toLowerCase().includes(t) || (a.fournisseur||'').toLowerCase().includes(t)
+  ).slice(-30).reverse();
+  const produits = DB.produits.filter(p=>p.nom.toLowerCase().includes(t));
+  const fournisseurs = DB.fournisseurs.filter(f=>f.nom.toLowerCase().includes(t));
+  const clients = DB.clients.filter(c=>c.nom.toLowerCase().includes(t));
+  return { achats, produits, fournisseurs, clients };
+}
+
+// ============================================================
+//  GÉNÉRATEUR EXCEL (.xlsx) via JSZip — export complet
+// ============================================================
+function _echapXml(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _celluleXml(ref, val){
+  if(typeof val === 'number' && isFinite(val)){
+    return `<c r="${ref}"><v>${val}</v></c>`;
+  }
+  return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${_echapXml(val)}</t></is></c>`;
+}
+function _colLettre(n){ let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);} return s; }
+
+/* sheets = [{nom, lignes:[[...], ...]}]  -> Blob xlsx */
+async function genererXLSX(sheets){
+  if(typeof JSZip === 'undefined') throw new Error('Générateur Excel indisponible');
+  const zip = new JSZip();
+  // [Content_Types].xml
+  let overrides = sheets.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('');
+  zip.file('[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+${overrides}</Types>`);
+  // _rels/.rels
+  zip.file('_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+  // xl/workbook.xml
+  let sheetsXml = sheets.map((s,i)=>`<sheet name="${_echapXml(s.nom).slice(0,31)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('');
+  zip.file('xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${sheetsXml}</sheets></workbook>`);
+  // xl/_rels/workbook.xml.rels
+  let rels = sheets.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('');
+  zip.file('xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`);
+  // feuilles
+  sheets.forEach((s,idx)=>{
+    let rowsXml = '';
+    s.lignes.forEach((ligne, r)=>{
+      let cells = '';
+      ligne.forEach((val, c)=>{ cells += _celluleXml(_colLettre(c+1)+(r+1), val); });
+      rowsXml += `<row r="${r+1}">${cells}</row>`;
+    });
+    zip.file(`xl/worksheets/sheet${idx+1}.xml`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`);
+  });
+  return await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+/* Construit toutes les feuilles de données pour l'export complet */
+function donneesExportComplet(){
+  const dev = DB.parametres.devise;
+  // Ventes (depuis inventaires, détaillé par catégorie)
+  const ventes = [['Date','Catégorie','Vendu','Prix', 'Montant ('+dev+')']];
+  DB.inventaires.forEach(inv=>{
+    inv.lignes.forEach(l=>{ if(l.vendu>0) ventes.push([dateFr(inv.date), l.nom, l.vendu, l.prix, l.montant]); });
+  });
+  // Achats
+  const achats = [['Date','Produit','Catégorie','Cartons','Contenu','Quantité','Prix achat','Payé','Fournisseur']];
+  DB.achats.forEach(a=>{
+    const cat = DB.categories.find(c=>c.id===a.categorieId);
+    achats.push([dateFr(a.date), a.produit, cat?cat.nom:'', a.cartons, a.contenu, a.quantite, a.prixGlobal, a.montantPaye||0, a.fournisseur||'']);
+  });
+  // Caisse
+  const caisse = [['Date','Mouvement','Entrée/Sortie','Montant','Solde']];
+  mouvementsCaisse().forEach(m=>{
+    caisse.push([m.fixe?'—':dateFr(m.date), m.libelle, m.sens==='+'?'Entrée':'Sortie', m.sens==='+'?m.montant:-m.montant, m.solde]);
+  });
+  // Fournisseurs
+  const fourn = [['Fournisseur','Total achats','Payé','Reste à payer']];
+  DB.fournisseurs.forEach(f=>{ const i=infosFournisseur(f.id); fourn.push([f.nom, i.totalAchats, i.totalPaye, i.solde]); });
+  // Clients
+  const clients = [['Client','Total crédit','Payé','Reste dû']];
+  DB.clients.forEach(c=>{ const i=infosClient(c.id); clients.push([c.nom, i.totalCredit, i.totalPaye, i.solde]); });
+  // Stock actuel
+  const stock = [['Catégorie','Prix vente','Stock','Valeur ('+dev+')']];
+  DB.categories.forEach(c=>{ const stk=stockCategorie(c.id); stock.push([c.nom, c.prix, stk, stk>0?stk*c.prix:0]); });
+
+  // Café (ventes + achats)
+  const cafe = [['Type','Date','Détail','Montant ('+dev+')']];
+  DB.cafeVentes.forEach(v=>{ cafe.push(['Vente', dateFr(v.date), v.note||'', v.montant]); });
+  DB.cafeAchats.forEach(a=>{ cafe.push(['Achat', dateFr(a.date), a.article+(a.fournisseur?' ('+a.fournisseur+')':''), a.montant]); });
+
+  return [
+    { nom:'Stock', lignes: stock },
+    { nom:'Ventes', lignes: ventes },
+    { nom:'Achats', lignes: achats },
+    { nom:'Caisse', lignes: caisse },
+    { nom:'Fournisseurs', lignes: fourn },
+    { nom:'Clients', lignes: clients },
+    { nom:'Café', lignes: cafe },
+  ];
 }
 
 /* ===== ui.js ===== */
@@ -1362,6 +1791,10 @@ function go(page){
   else if(page==='achats') { c.innerHTML = pageAchats(); }
   else if(page==='stock') c.innerHTML = pageStock();
   else if(page==='fournisseurs') { c.innerHTML = pageFournisseurs(); bindFournisseurs && bindFournisseurs(); }
+  else if(page==='clients') { c.innerHTML = pageClients(); }
+  else if(page==='emprunts') { c.innerHTML = pageEmprunts(); }
+  else if(page==='cafe') { c.innerHTML = pageCafe(); }
+  else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
   else if(page==='plus') { c.innerHTML = pagePlus(); bindPlus(); }
 }
@@ -1382,10 +1815,8 @@ function pageAccueil(){
   const dernier = DB.inventaires[DB.inventaires.length-1];
   const caJour = dernier ? dernier.totalCA : 0;
 
-  // alertes stock
-  const alertes = DB.categories
-    .map(c=>({cat:c, stk:stockCategorie(c.id)}))
-    .filter(x=>x.stk <= 15);
+  // alertes stock (seuil par catégorie)
+  const alertes = categoriesEnAlerte().map(x=>({cat:x.cat, stk:x.stock, seuil:x.seuil}));
 
   return `
   <div class="page">
@@ -1415,7 +1846,7 @@ function pageAccueil(){
     <div class="card">
       <div class="card-head"><div class="card-title">⚠️ Stock à surveiller</div></div>
       ${alertes.map(a=>{
-        const st = statutStock(a.stk);
+        const st = statutStock(a.stk, a.seuil);
         return `<div class="cat-row">
           <span class="cat-dot" style="background:${a.cat.couleur}"></span>
           <div class="cat-info"><div class="cat-name">${a.cat.nom}</div>
@@ -1569,6 +2000,7 @@ function pageAchats(){
       <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
         ${dernier ? `<button class="btn btn-ghost" onclick="refaireDernierAchat()">🔁 Refaire le dernier</button>` : ''}
         <button class="btn btn-ghost" onclick="openImportSheet()">📥 Importer (CSV/Excel)</button>
+        <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
       </div>
     </div>
 
@@ -1779,10 +2211,12 @@ function pageStock(){
       </div>
     </div>
 
+    <button class="btn btn-ambre" onclick="openRegulariserSheet()" style="margin-bottom:14px">⚖️ Régulariser le stock (casse, perte, erreur)</button>
+
     <div class="card">
       ${DB.categories.map(c=>{
         const stk = stockCategorie(c.id);
-        const st = statutStock(stk);
+        const st = statutStock(stk, c.seuil);
         const val = stk>0 ? stk * c.prix : 0;
         const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
         return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
@@ -1828,6 +2262,21 @@ function pagePlus(){
         <button class="btn btn-ghost" onclick="go('benefice')">📈 Bénéfice</button>
         <button class="btn btn-ghost" onclick="go('stock')">📦 Stock</button>
       </div>
+      <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
+      <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🧰 Outils</div></div>
+      <div class="btn-group" style="flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="go('clients')">👥 Clients à crédit</button>
+        <button class="btn btn-ghost" onclick="go('graphiques')">📊 Graphiques</button>
+      </div>
+      <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
+        <button class="btn btn-ghost" onclick="openCorbeilleSheet()">🗑️ Corbeille${(DB.corbeille&&DB.corbeille.length)?' ('+DB.corbeille.length+')':''}</button>
+      </div>
+      <button class="btn btn-ghost" onclick="exporterExcelComplet()" style="margin-top:10px">📤 Exporter tout en Excel</button>
     </div>
 
     <div class="card">
@@ -2100,6 +2549,235 @@ function pageBenefice(){
 }
 
 function setBeneficePeriode(p){ BENEFICE_PERIODE = p; go('benefice'); }
+
+/* ===== pages3.js ===== */
+/* ============================================================
+   FRIGO — Pages Clients & Graphiques
+   ============================================================ */
+
+// ---------- PAGE CLIENTS À CRÉDIT ----------
+function pageClients(){
+  const clients = DB.clients.map(c=>infosClient(c.id)).sort((a,b)=> b.solde - a.solde);
+  const totalDu = totalCreancesClients();
+  return `
+  <div class="page">
+    <div class="page-title">👥 Clients à crédit</div>
+    <div class="page-sub">Qui vous doit de l'argent.</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip on" onclick="go('clients')">👥 Clients</button>
+      <button class="chip" onclick="go('graphiques')">📊 Graphiques</button>
+    </div>
+
+    <div class="metric gold" style="margin-bottom:16px">
+      <div class="m-label">Total qu'on vous doit</div>
+      <div class="m-value mono">${fmt(totalDu)} ${DB.parametres.devise}</div>
+    </div>
+
+    <button class="btn btn-ambre" onclick="openCreanceSheet()" style="margin-bottom:16px">➕ Nouveau crédit client</button>
+
+    ${clients.length===0 ? `
+      <div class="empty"><div class="e-ic">👥</div><div>Aucun client à crédit</div>
+      <div style="font-size:13px;margin-top:6px">Ajoutez un crédit quand un client prend sans payer</div></div>
+    ` : `
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px">Touchez un client pour voir le détail et encaisser.</div>
+      ${clients.map(c=>`
+        <div class="cat-row" style="cursor:pointer" onclick="openClientSheet('${c.id}')">
+          <span class="cat-dot" style="background:${c.solde>0?'var(--ambre)':'var(--vert)'}"></span>
+          <div class="cat-info"><div class="cat-name">${c.nom}</div>
+          <div class="cat-meta">reçu ${fmt(c.totalPaye)}/${fmt(c.totalCredit)}</div></div>
+          <div style="text-align:right">
+            ${c.solde>0 ? `<div class="pill low">doit ${fmt(c.solde)}</div>` : `<div class="pill ok">à jour ✓</div>`}
+          </div>
+        </div>`).join('')}
+    </div>`}
+  </div>`;
+}
+
+// ---------- PAGE GRAPHIQUES ----------
+function pageGraphiques(){
+  // Ventes par jour (12 derniers inventaires)
+  const invs = [...DB.inventaires].sort((a,b)=>a.date<b.date?-1:1).slice(-12);
+  const ventesData = invs.map(i=>({ label: i.date.slice(5), valeur: i.totalCA }));
+  // Stock par catégorie (valeur au prix de vente)
+  const stockData = DB.categories.map(c=>{
+    const stk = stockCategorie(c.id);
+    return { label: c.nom, valeur: stk>0?stk*c.prix:0, couleur: c.couleur, stock: stk };
+  }).filter(x=>x.valeur>0).sort((a,b)=>b.valeur-a.valeur);
+
+  return `
+  <div class="page">
+    <div class="page-title">📊 Graphiques</div>
+    <div class="page-sub">Vos ventes et votre stock en images.</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('clients')">👥 Clients</button>
+      <button class="chip on" onclick="go('graphiques')">📊 Graphiques</button>
+      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📈 Ventes par inventaire</div></div>
+      ${ventesData.length ? graphBarres(ventesData, 'var(--givre)') :
+        `<div class="empty" style="padding:20px"><div style="font-size:13px">Pas encore de ventes</div></div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">📦 Valeur du stock par catégorie</div></div>
+      ${stockData.length ? graphBarresH(stockData) :
+        `<div class="empty" style="padding:20px"><div style="font-size:13px">Stock vide</div></div>`}
+    </div>
+  </div>`;
+}
+
+/* Graphique à barres verticales (SVG) */
+function graphBarres(data, couleur){
+  const max = Math.max(...data.map(d=>d.valeur), 1);
+  const W = 320, H = 160, pad = 24, bw = (W - pad*2) / data.length;
+  const barres = data.map((d,i)=>{
+    const h = Math.max(2, (d.valeur/max) * (H - pad*2));
+    const x = pad + i*bw + bw*0.15;
+    const y = H - pad - h;
+    const w = bw*0.7;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${couleur}"/>
+      <text x="${(x+w/2).toFixed(1)}" y="${H-pad+12}" font-size="8" fill="#94A3B8" text-anchor="middle">${d.label}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+    <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#2A384E" stroke-width="1"/>
+    ${barres}
+    <text x="${pad}" y="14" font-size="9" fill="#5EEAD4">max ${fmt(max)} ${DB.parametres.devise}</text>
+  </svg>`;
+}
+
+/* Graphique à barres horizontales (SVG) avec valeurs */
+function graphBarresH(data){
+  const max = Math.max(...data.map(d=>d.valeur), 1);
+  const rowH = 30, W = 320, labelW = 90, barMax = W - labelW - 60;
+  const rows = data.slice(0,8).map((d,i)=>{
+    const w = Math.max(3, (d.valeur/max) * barMax);
+    const y = i*rowH + 6;
+    return `
+      <text x="0" y="${y+13}" font-size="9" fill="#E8EEF6">${d.label.length>13?d.label.slice(0,12)+'…':d.label}</text>
+      <rect x="${labelW}" y="${y}" width="${w.toFixed(1)}" height="18" rx="3" fill="${d.couleur||'#5EEAD4'}"/>
+      <text x="${labelW+w+4}" y="${y+13}" font-size="8.5" fill="#94A3B8">${fmt(d.valeur)}</text>`;
+  }).join('');
+  const H = Math.min(data.length,8)*rowH + 10;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${rows}</svg>`;
+}
+
+// ---------- PAGE EMPRUNTS / PRÊTS ----------
+function pageEmprunts(){
+  const emprunts = DB.emprunts.map(e=>infosEmprunt(e.id)).sort((a,b)=> b.solde - a.solde);
+  const totalDu = totalDettesEmprunts();
+  return `
+  <div class="page">
+    <div class="page-title">🏦 Emprunts / Prêts</div>
+    <div class="page-sub">L'argent que vous avez emprunté (frigo, machine…).</div>
+
+    <div class="swipe-x" style="margin-bottom:16px">
+      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
+      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <button class="chip" onclick="go('clients')">👥 Clients</button>
+      <button class="chip on" onclick="go('emprunts')">🏦 Emprunts</button>
+    </div>
+
+    <div class="metric accent" style="margin-bottom:16px">
+      <div class="m-label">Total qu'il reste à rembourser</div>
+      <div class="m-value mono">${fmt(totalDu)} ${DB.parametres.devise}</div>
+    </div>
+
+    <button class="btn btn-ambre" onclick="openEmpruntSheet()" style="margin-bottom:16px">➕ Nouvel emprunt</button>
+
+    ${emprunts.length===0 ? `
+      <div class="empty"><div class="e-ic">🏦</div><div>Aucun emprunt</div>
+      <div style="font-size:13px;margin-top:6px">Ajoutez le prêt qui a servi à payer le frigo, la machine…</div></div>
+    ` : `
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px">Touchez un emprunt pour rembourser ou voir le détail.</div>
+      ${emprunts.map(e=>{
+        const pct = e.montantARembourser>0 ? Math.round((e.totalRembourse/e.montantARembourser)*100) : 0;
+        return `<div class="cat-row" style="cursor:pointer;display:block" onclick="openEmpruntDetailSheet('${e.id}')">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="cat-dot" style="background:${e.solde>0?'var(--ambre)':'var(--vert)'}"></span>
+            <div class="cat-info"><div class="cat-name">${e.preteur}</div>
+            <div class="cat-meta">${e.motif||'—'} • remboursé ${fmt(e.totalRembourse)}/${fmt(e.montantARembourser)}</div></div>
+            <div style="text-align:right">
+              ${e.solde>0 ? `<div class="pill low">reste ${fmt(e.solde)}</div>` : `<div class="pill ok">soldé ✓</div>`}
+            </div>
+          </div>
+          <div style="height:6px;background:var(--nuit);border-radius:4px;margin-top:8px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:var(--vert)"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`}
+  </div>`;
+}
+
+// ---------- PAGE CAFÉ ----------
+function pageCafe(){
+  const p = window._cafePeriode || 'mois';
+  const ref = auj();
+  let per = {debut:null, fin:null}, titre = 'Depuis le début';
+  if(p==='jour'){ per = periodeJour(ref); titre = "Aujourd'hui"; }
+  else if(p==='semaine'){ per = periodeSemaine(ref); titre = 'Cette semaine'; }
+  else if(p==='mois'){ per = periodeMois(ref); titre = 'Ce mois'; }
+  const s = statsCafe(per.debut, per.fin);
+  const ventes = [...s.ventesListe].sort((a,b)=>a.date<b.date?1:-1).slice(0,12);
+  const achats = [...s.achatsListe].sort((a,b)=>a.date<b.date?1:-1).slice(0,12);
+  const dev = DB.parametres.devise;
+  return `
+  <div class="page">
+    <div class="page-title">☕ Café</div>
+    <div class="page-sub">Suivi séparé : achats, ventes et résultat de votre café.</div>
+
+    <div class="seg" style="margin-bottom:16px">
+      <button type="button" class="${p==='jour'?'on':''}" onclick="setCafePeriode('jour')">Jour</button>
+      <button type="button" class="${p==='semaine'?'on':''}" onclick="setCafePeriode('semaine')">Semaine</button>
+      <button type="button" class="${p==='mois'?'on':''}" onclick="setCafePeriode('mois')">Mois</button>
+      <button type="button" class="${p==='tout'?'on':''}" onclick="setCafePeriode('tout')">Tout</button>
+    </div>
+
+    <div class="metrics" style="margin-bottom:8px">
+      <div class="metric gold"><div class="m-label">Ventes café (${titre})</div><div class="m-value mono">${fmt(s.ventes)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">Achats café</div><div class="m-value mono">${fmt(s.achats)} ${dev}</div></div>
+    </div>
+    <div class="metric ${s.resultat>=0?'accent':''}" style="margin-bottom:16px;${s.resultat<0?'border-color:var(--rouge)':''}">
+      <div class="m-label">Résultat café (bénéfice)</div>
+      <div class="m-value mono" style="${s.resultat<0?'color:var(--rouge)':''}">${fmt(s.resultat)} ${dev}</div>
+    </div>
+
+    <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn btn-ambre" onclick="openVenteCafeSheet()">➕ Vente (versement vendeur)</button>
+      <button class="btn btn-ghost" onclick="openAchatCafeSheet()">🛒 Achat café / accessoires</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">💵 Ventes récentes</div>
+      ${ventes.length===0 ? '<div class="hint">Aucune vente sur la période</div>' :
+        ventes.map(v=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(v.montant)} ${dev}</div>
+          <div class="cat-meta">${dateFr(v.date)}${v.note?' • '+v.note:''}</div></div>
+          <button class="btn btn-sm btn-ghost" onclick="supprVenteCafeUI('${v.id}')">🗑️</button>
+        </div>`).join('')}
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">🛒 Achats récents</div>
+      ${achats.length===0 ? '<div class="hint">Aucun achat sur la période</div>' :
+        achats.map(a=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${a.article}</div>
+          <div class="cat-meta">${dateFr(a.date)} • ${fmt(a.montant)} ${dev}${a.fournisseur?' • '+a.fournisseur:''}</div></div>
+          <button class="btn btn-sm btn-ghost" onclick="supprAchatCafeUI('${a.id}')">🗑️</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+function setCafePeriode(p){ window._cafePeriode = p; go('cafe'); }
 
 /* ===== actions.js ===== */
 /* ============================================================
@@ -2467,6 +3145,9 @@ function openCatEdit(catId){
       <input class="input" id="cNom" value="${cat?cat.nom:''}" placeholder="Ex: Grand Canette"></div>
     <div class="field"><label>Prix de vente (${DB.parametres.devise})</label>
       <input class="input" id="cPrix" type="number" inputmode="numeric" value="${cat?cat.prix:''}" placeholder="500"></div>
+    <div class="field"><label>Seuil d'alerte stock faible</label>
+      <input class="input" id="cSeuil" type="number" inputmode="numeric" value="${cat?(cat.seuil!=null?cat.seuil:15):15}" placeholder="15">
+      <div class="hint" style="margin-top:5px">Vous serez prévenu quand le stock descend à ce niveau.</div></div>
     <div class="field"><label>Couleur</label>
       <div class="swipe-x" id="colorPick">
         ${couleurs.map(col=>`<button class="chip ${cat&&cat.couleur===col?'on':''}" data-col="${col}"
@@ -2492,12 +3173,13 @@ function openCatEdit(catId){
   $('#cSave').addEventListener('click', ()=>{
     const nom = $('#cNom').value.trim();
     const prix = Number($('#cPrix').value)||0;
+    const seuil = Math.max(0, Number($('#cSeuil').value)||0);
     if(!nom){ toast('Indiquez le nom','err'); return; }
     if(prix<=0){ toast('Indiquez le prix','err'); return; }
     if(cat){
-      cat.nom = nom; cat.prix = prix; cat.couleur = selCol;
+      cat.nom = nom; cat.prix = prix; cat.couleur = selCol; cat.seuil = seuil;
     } else {
-      DB.categories.push({id:uid('cat'), nom, prix, couleur:selCol});
+      DB.categories.push({id:uid('cat'), nom, prix, couleur:selCol, seuil});
     }
     sauverDB(); toast('Catégorie enregistrée ✓'); closeSheet(); go('plus');
   });
@@ -2926,6 +3608,7 @@ function openImportSheet(){
       reader.onload = async ev=>{
         try{
           const texte = await xlsxVersTexte(ev.target.result);
+          window._importTexte = texte;
           const res = analyserCSVAchats(texte);
           window._importLignes = res.lignes;
           afficherApercuImport(res);
@@ -2940,6 +3623,7 @@ function openImportSheet(){
       // Fichier CSV / texte
       const reader = new FileReader();
       reader.onload = ev=>{
+        window._importTexte = ev.target.result;
         const res = analyserCSVAchats(ev.target.result);
         window._importLignes = res.lignes;
         afficherApercuImport(res);
@@ -2958,23 +3642,66 @@ function afficherApercuImport(res){
       <span style="font-size:12px">${res.erreurs.slice(0,4).join('<br>')||'Vérifiez le format du fichier.'}</span></div>`;
     return;
   }
-  const apercu = res.lignes.slice(0,8);
-  zone.innerHTML = `
+  const inconnues = res.categoriesInconnues || [];
+  const apercu = res.lignes.slice(0,10);
+
+  // Section catégories inconnues (à créer avec leur prix de vente)
+  const blocInconnues = inconnues.length ? `
+    <div class="card" style="margin-top:14px;border-color:var(--orange);background:#2a1e0e">
+      <div class="card-title" style="font-size:14px;margin-bottom:6px;color:var(--orange)">⚠️ Catégories inconnues</div>
+      <div class="hint" style="margin-bottom:12px">Ces catégories n'existent pas encore. Indiquez leur <b>prix de vente</b> pour les créer.</div>
+      ${inconnues.map(nom=>`
+        <div class="cat-row" style="background:var(--nuit)">
+          <div class="cat-info"><div class="cat-name">${nom}</div>
+          <div class="cat-meta">prix de vente ?</div></div>
+          <input class="cat-input" type="number" inputmode="numeric" min="0" placeholder="prix" data-newcat="${nom}">
+        </div>`).join('')}
+      <button class="btn btn-ambre" onclick="creerCategoriesImport()" style="margin-top:10px">➕ Créer ces catégories</button>
+    </div>` : '';
+
+  // Tableau d'aperçu (catégories inconnues en orange)
+  const tableau = `
     <div class="card" style="margin-top:14px">
-      <div class="card-title" style="font-size:14px;margin-bottom:10px">✓ ${res.lignes.length} achat(s) prêt(s)</div>
+      <div class="card-title" style="font-size:14px;margin-bottom:10px">${inconnues.length?'Aperçu':'✓ '+res.lignes.length+' achat(s) prêt(s)'}</div>
       <div class="tbl-wrap"><table class="tbl">
         <tr><th>Date</th><th>Produit</th><th>Catégorie</th><th class="num">Prix</th></tr>
         ${apercu.map(l=>`<tr>
           <td style="font-size:11px;color:var(--texte-doux)">${dateFr(l.date)}</td>
           <td>${l.produitNom}</td>
-          <td style="font-size:11px">${l.categorieNom}</td>
+          <td style="font-size:11px;${l.categorieInconnue?'color:var(--orange);font-weight:700':''}">${l.categorieInconnue?'⚠️ '+l.categorieNomBrut:l.categorieNom}</td>
           <td class="num">${fmt(l.prixGlobal)}</td>
         </tr>`).join('')}
       </table></div>
-      ${res.lignes.length>8?`<div class="hint" style="margin-top:8px">…et ${res.lignes.length-8} autre(s)</div>`:''}
+      ${res.lignes.length>10?`<div class="hint" style="margin-top:8px">…et ${res.lignes.length-10} autre(s)</div>`:''}
       ${res.erreurs.length?`<div class="hint" style="color:var(--orange);margin-top:8px">⚠️ ${res.erreurs.length} ligne(s) ignorée(s)</div>`:''}
-      <button class="btn btn-ambre" onclick="confirmerImport()" style="margin-top:12px">✅ Importer ces ${res.lignes.length} achats</button>
+      ${inconnues.length
+        ? `<div class="hint" style="color:var(--orange);margin-top:10px">Créez d'abord les catégories inconnues ci-dessus avant d'importer.</div>`
+        : `<button class="btn btn-ambre" onclick="confirmerImport()" style="margin-top:12px">✅ Importer ces ${res.lignes.length} achats</button>`}
     </div>`;
+
+  zone.innerHTML = blocInconnues + tableau;
+}
+
+// Créer les catégories inconnues saisies, puis ré-analyser
+function creerCategoriesImport(){
+  const inputs = document.querySelectorAll('[data-newcat]');
+  const couleurs = ['#5EEAD4','#60A5FA','#A78BFA','#C4B5FD','#FBBF24','#FB923C','#F472B6','#34D399','#FACC15','#818CF8'];
+  let created = 0;
+  inputs.forEach(inp=>{
+    const nom = (inp.dataset.newcat||'').trim();
+    const prix = Number(inp.value)||0;
+    if(nom && prix>0 && !categorieParNom(nom)){
+      DB.categories.push({ id: uid('cat'), nom, prix, couleur: couleurs[DB.categories.length % couleurs.length] });
+      created++;
+    }
+  });
+  if(created===0){ toast('Indiquez le prix de vente','err'); return; }
+  sauverDB();
+  toast(created + ' catégorie(s) créée(s) ✓');
+  // ré-analyser le même fichier : les catégories sont maintenant reconnues
+  const res = analyserCSVAchats(window._importTexte || '');
+  window._importLignes = res.lignes;
+  afficherApercuImport(res);
 }
 
 function confirmerImport(){
@@ -2997,6 +3724,519 @@ function telechargerModeleCSV(){
   a.href = url; a.download = 'modele_achats_frigo.csv';
   a.click(); URL.revokeObjectURL(url);
   toast('Modèle téléchargé ✓');
+}
+
+/* ===== actions3.js ===== */
+/* ============================================================
+   FRIGO — Actions : Régularisation, Clients, Corbeille, Export, Recherche
+   ============================================================ */
+
+// ============================================================
+//  RÉGULARISATION DE STOCK
+// ============================================================
+function openRegulariserSheet(){
+  const cats = DB.categories;
+  sheet(`
+    <h2>⚖️ Régulariser le stock</h2>
+    <div class="s-sub">Alignez le stock théorique sur le stock réel compté. Sert aux pertes (casse, vol, erreur) — n'affecte pas vos ventes.</div>
+
+    <div class="field">
+      <label>Comptez et saisissez le stock réel</label>
+      <div class="hint" style="margin-bottom:8px">Laissez vide une catégorie que vous ne comptez pas.</div>
+      ${cats.map(c=>{
+        const theo = stockCategorie(c.id);
+        return `<div class="reg-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bord)">
+          <span class="cat-dot" style="background:${c.couleur};flex:0 0 auto"></span>
+          <div style="flex:1;min-width:0">
+            <div class="cat-name">${c.nom}</div>
+            <div class="cat-meta">théorique : <b>${fmt(theo)}</b></div>
+          </div>
+          <input class="input regInp" data-cat="${c.id}" data-theo="${theo}" type="number" inputmode="numeric"
+            placeholder="réel" style="width:80px;flex:0 0 auto" oninput="majEcartRegul(this)">
+          <span class="regEcart" data-for="${c.id}" style="width:54px;text-align:right;font-size:12px;font-weight:700;flex:0 0 auto"></span>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="field">
+      <label>Motif de la régularisation</label>
+      <select class="input" id="regMotif">
+        <option value="Casse">Casse (bouteilles cassées)</option>
+        <option value="Perte">Perte</option>
+        <option value="Vol">Vol</option>
+        <option value="Erreur de comptage">Erreur de comptage</option>
+        <option value="Don / offert">Don / offert</option>
+        <option value="Autre">Autre</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Régularisé par (votre nom)</label>
+      <input class="input" id="regUser" placeholder="Ex: Abdoulaye" value="${(DB.parametres && DB.parametres.gerant)||''}">
+    </div>
+
+    <div id="regResume" class="hint" style="margin-bottom:8px"></div>
+
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="confirmerRegularisation()">✅ Régulariser</button>
+    </div>
+
+    ${(DB.regularisations && DB.regularisations.length) ?
+      `<button class="btn btn-ghost" onclick="ouvrirHistoriqueRegul()" style="margin-top:12px">🕑 Voir l'historique (${DB.regularisations.length})</button>` : ''}
+  `);
+}
+
+function majEcartRegul(inp){
+  const theo = Number(inp.dataset.theo)||0;
+  const span = document.querySelector('.regEcart[data-for="'+inp.dataset.cat+'"]');
+  if(inp.value===''){ if(span){span.textContent=''; } majResumeRegul(); return; }
+  const phys = Number(inp.value)||0;
+  const ec = phys - theo;
+  if(span){
+    span.textContent = (ec>0?'+':'') + ec;
+    span.style.color = ec===0 ? 'var(--texte-doux)' : (ec<0 ? 'var(--rouge)' : 'var(--vert)');
+  }
+  majResumeRegul();
+}
+
+function majResumeRegul(){
+  const inputs = document.querySelectorAll('.regInp');
+  let nb = 0;
+  inputs.forEach(inp=>{
+    if(inp.value==='') return;
+    const ec = (Number(inp.value)||0) - (Number(inp.dataset.theo)||0);
+    if(ec!==0) nb++;
+  });
+  const r = $('#regResume');
+  if(r) r.textContent = nb===0 ? 'Aucun écart pour le moment.' : nb+' catégorie(s) avec un écart à régulariser.';
+}
+
+function confirmerRegularisation(){
+  const comptes = {};
+  document.querySelectorAll('.regInp').forEach(inp=>{
+    if(inp.value!=='') comptes[inp.dataset.cat] = inp.value;
+  });
+  const motif = $('#regMotif') ? $('#regMotif').value : '';
+  const user = $('#regUser') ? $('#regUser').value.trim() : '';
+  // mémoriser le nom du gérant pour la prochaine fois
+  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = user; }
+
+  const apercu = apercuRegularisation(comptes).filter(x=>x.ecart!==0);
+  if(apercu.length===0){ toast('Aucun écart à régulariser','err'); return; }
+
+  const reg = regulariserStock({comptes, motif, user});
+  if(!reg){ toast('Aucun écart à régulariser','err'); return; }
+  toast(reg.lignes.length + ' catégorie(s) régularisée(s) ✓');
+  closeSheet();
+  go('stock');
+}
+
+function ouvrirHistoriqueRegul(){
+  const hist = historiqueRegularisations();
+  sheet(`
+    <h2>🕑 Historique des régularisations</h2>
+    <div class="s-sub">Traçabilité complète : date, personne, motif et écarts.</div>
+    ${hist.length===0 ? `<div class="empty"><div class="e-ic">🕑</div><div>Aucune régularisation</div></div>` :
+      hist.map(r=>`
+        <div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+            <div>
+              <div style="font-weight:700">${dateFr(r.date)}</div>
+              <div class="cat-meta">par ${r.user} • motif : ${r.motif}</div>
+            </div>
+            <button class="btn btn-sm btn-ghost" onclick="supprRegulUI('${r.id}')">🗑️</button>
+          </div>
+          <table class="tbl" style="font-size:12px">
+            <tr><th>Catégorie</th><th class="num">Avant</th><th class="num">Après</th><th class="num">Écart</th></tr>
+            ${r.lignes.map(l=>`<tr>
+              <td>${l.nom||(DB.categories.find(c=>c.id===l.categorieId)||{}).nom||''}</td>
+              <td class="num">${fmt(l.ancienStock)}</td>
+              <td class="num">${fmt(l.nouveauStock)}</td>
+              <td class="num" style="color:${l.ecart<0?'var(--rouge)':'var(--vert)'};font-weight:700">${l.ecart>0?'+':''}${l.ecart}</td>
+            </tr>`).join('')}
+          </table>
+        </div>`).join('')
+    }
+    <div class="btn-group"><button class="btn btn-ghost" onclick="openRegulariserSheet()">← Retour</button></div>
+  `);
+}
+
+function supprRegulUI(id){
+  if(confirm('Annuler cette régularisation ? Le stock reviendra à l\'état précédent.')){
+    supprimerRegularisation(id);
+    toast('Régularisation annulée (mise en corbeille)');
+    ouvrirHistoriqueRegul();
+  }
+}
+
+// ============================================================
+//  CLIENTS À CRÉDIT
+// ============================================================
+function openCreanceSheet(){
+  sheet(`
+    <h2>➕ Nouveau crédit client</h2>
+    <div class="s-sub">Un client prend de la marchandise sans payer maintenant.</div>
+    <div class="field"><label>Nom du client</label>
+      <input class="input" id="crClient" list="clientList" placeholder="Ex: MOUSSA" autocomplete="off">
+      <datalist id="clientList">${DB.clients.map(c=>`<option value="${c.nom}">`).join('')}</datalist>
+    </div>
+    <div class="field"><label>Montant du crédit (${DB.parametres.devise})</label>
+      <input class="input" id="crMontant" type="number" inputmode="numeric" placeholder="Ex: 5000"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="crNote" placeholder="Ex: 10 cocas + 2 bramali"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="crDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerCreance()">Enregistrer le crédit</button>
+    </div>
+  `);
+}
+
+function validerCreance(){
+  const clientNom = $('#crClient').value.trim();
+  const montant = Number($('#crMontant').value)||0;
+  const note = $('#crNote').value.trim();
+  const date = $('#crDate').value || auj();
+  if(!clientNom){ toast('Indiquez le nom du client','err'); return; }
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterCreance({date, clientNom, montant, note});
+  toast('Crédit enregistré ✓');
+  closeSheet();
+  go('clients');
+}
+
+function openClientSheet(clientId){
+  const c = infosClient(clientId);
+  if(!c) return;
+  const mouvements = [
+    ...c.creances.map(x=>({...x, sens:'credit'})),
+    ...c.paiements.map(x=>({...x, sens:'paiement'}))
+  ].sort((a,b)=> a.date<b.date?1:-1);
+  sheet(`
+    <h2>👤 ${c.nom}</h2>
+    <div class="s-sub">${c.solde>0 ? 'Vous doit '+fmt(c.solde)+' '+DB.parametres.devise : 'Compte à jour ✓'}</div>
+
+    <div class="metrics" style="margin-bottom:14px">
+      <div class="metric"><div class="m-label">Total crédit</div><div class="m-value mono">${fmt(c.totalCredit)}</div></div>
+      <div class="metric accent"><div class="m-label">Reste dû</div><div class="m-value mono">${fmt(c.solde)}</div></div>
+    </div>
+
+    ${c.solde>0 ? `
+    <div class="field"><label>Encaisser un paiement (${DB.parametres.devise})</label>
+      <input class="input" id="clPay" type="number" inputmode="numeric" placeholder="Montant reçu"></div>
+    <div class="btn-group" style="margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="payerClientTout('${clientId}')" style="flex:0 0 auto">Tout (${fmt(c.solde)})</button>
+      <button class="btn btn-ambre" onclick="validerPaiementClient('${clientId}')">Encaisser</button>
+    </div>` : ''}
+
+    <div class="card" style="margin-top:8px">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">Historique</div>
+      ${mouvements.length===0 ? '<div class="hint">Rien pour le moment</div>' :
+        mouvements.map(m=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${m.sens==='credit'?'📦 Crédit':'💵 Paiement'}</div>
+          <div class="cat-meta">${dateFr(m.date)}${m.note?' • '+m.note:''}</div></div>
+          <span style="font-weight:700;color:${m.sens==='credit'?'var(--ambre)':'var(--vert)'}">${m.sens==='credit'?'+':'−'}${fmt(m.montant)}</span>
+        </div>`).join('')}
+    </div>
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+
+function validerPaiementClient(clientId){
+  const montant = Number($('#clPay').value)||0;
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  payerClient({clientId, montant});
+  toast('Paiement enregistré ✓');
+  closeSheet();
+  go('clients');
+}
+function payerClientTout(clientId){
+  const solde = soldeClient(clientId);
+  if(solde<=0){ toast('Rien à payer','err'); return; }
+  payerClient({clientId, montant:solde});
+  toast('Compte soldé ✓');
+  closeSheet();
+  go('clients');
+}
+
+// ============================================================
+//  RECHERCHE
+// ============================================================
+function openRechercheSheet(){
+  sheet(`
+    <h2>🔍 Rechercher</h2>
+    <div class="s-sub">Trouvez un achat, un produit, un fournisseur ou un client.</div>
+    <div class="field">
+      <input class="input" id="rechInput" placeholder="Tapez un nom…" autocomplete="off" oninput="lancerRecherche(this.value)">
+    </div>
+    <div id="rechResultats"><div class="hint">Commencez à taper…</div></div>
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+  setTimeout(()=>{ const el=$('#rechInput'); if(el) el.focus(); }, 100);
+}
+
+function lancerRecherche(terme){
+  const zone = $('#rechResultats');
+  if(!zone) return;
+  if(!terme || terme.trim().length<1){ zone.innerHTML = '<div class="hint">Commencez à taper…</div>'; return; }
+  const r = rechercher(terme);
+  const total = r.achats.length + r.produits.length + r.fournisseurs.length + r.clients.length;
+  if(total===0){ zone.innerHTML = '<div class="empty" style="padding:20px"><div style="font-size:13px">Aucun résultat</div></div>'; return; }
+  let html = '';
+  if(r.produits.length){
+    html += `<div class="card" style="margin-bottom:10px"><div class="card-title" style="font-size:13px;margin-bottom:6px">🧴 Produits (${r.produits.length})</div>
+      ${r.produits.slice(0,10).map(p=>{ const cat=DB.categories.find(c=>c.id===p.categorieId); return `<div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${p.nom}</div><div class="cat-meta">${cat?cat.nom:''}</div></div></div>`; }).join('')}</div>`;
+  }
+  if(r.fournisseurs.length){
+    html += `<div class="card" style="margin-bottom:10px"><div class="card-title" style="font-size:13px;margin-bottom:6px">🏢 Fournisseurs (${r.fournisseurs.length})</div>
+      ${r.fournisseurs.map(f=>`<div class="cat-row" style="cursor:pointer" onclick="closeSheet();go('fournisseurs')"><div class="cat-info"><div class="cat-name" style="font-size:14px">${f.nom}</div><div class="cat-meta">doit ${fmt(soldeFournisseur(f.id))}</div></div></div>`).join('')}</div>`;
+  }
+  if(r.clients.length){
+    html += `<div class="card" style="margin-bottom:10px"><div class="card-title" style="font-size:13px;margin-bottom:6px">👥 Clients (${r.clients.length})</div>
+      ${r.clients.map(c=>`<div class="cat-row" style="cursor:pointer" onclick="closeSheet();openClientSheet('${c.id}')"><div class="cat-info"><div class="cat-name" style="font-size:14px">${c.nom}</div><div class="cat-meta">doit ${fmt(soldeClient(c.id))}</div></div></div>`).join('')}</div>`;
+  }
+  if(r.achats.length){
+    html += `<div class="card"><div class="card-title" style="font-size:13px;margin-bottom:6px">📥 Achats (${r.achats.length})</div>
+      ${r.achats.slice(0,15).map(a=>`<div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${a.produit}</div><div class="cat-meta">${dateFr(a.date)}${a.fournisseur?' • '+a.fournisseur:''}</div></div><span style="font-weight:700">${fmt(a.prixGlobal)}</span></div>`).join('')}</div>`;
+  }
+  zone.innerHTML = html;
+}
+
+// ============================================================
+//  CORBEILLE
+// ============================================================
+function openCorbeilleSheet(){
+  const items = [...(DB.corbeille||[])].reverse();
+  sheet(`
+    <h2>🗑️ Corbeille</h2>
+    <div class="s-sub">Éléments supprimés. Vous pouvez les restaurer.</div>
+    ${items.length===0 ? `<div class="empty"><div class="e-ic">🗑️</div><div>Corbeille vide</div></div>` : `
+      <div class="card">
+        ${items.map(it=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${it.libelle||it.type}</div>
+          <div class="cat-meta">supprimé le ${dateFr(it.dateSuppr)}</div></div>
+          <button class="btn btn-sm btn-primary" onclick="restaurerUI('${it.id}')">↩️ Restaurer</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn-danger" onclick="viderCorbeilleUI()" style="margin-top:12px">Vider la corbeille</button>
+    `}
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+function restaurerUI(id){
+  restaurerCorbeille(id);
+  toast('Élément restauré ✓');
+  openCorbeilleSheet();
+}
+function viderCorbeilleUI(){
+  if(confirm('Vider définitivement la corbeille ?')){
+    viderCorbeille();
+    toast('Corbeille vidée');
+    closeSheet();
+  }
+}
+
+// ============================================================
+//  EXPORT EXCEL COMPLET
+// ============================================================
+async function exporterExcelComplet(){
+  try{
+    toast('Préparation du fichier Excel…');
+    const sheets = donneesExportComplet();
+    const blob = await genererXLSX(sheets);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = auj();
+    a.href = url; a.download = 'FRIGO_donnees_' + d + '.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Fichier Excel téléchargé ✓');
+  }catch(err){
+    toast('Erreur lors de l\'export','err');
+  }
+}
+
+// ============================================================
+//  EMPRUNTS / PRÊTS
+// ============================================================
+function openEmpruntSheet(){
+  sheet(`
+    <h2>➕ Nouvel emprunt</h2>
+    <div class="s-sub">L'argent que vous avez emprunté pour payer un équipement.</div>
+    <div class="field"><label>Qui vous a prêté ?</label>
+      <input class="input" id="empPreteur" placeholder="Ex: Mutuelle, Amadou, banque"></div>
+    <div class="field"><label>Pour quoi ?</label>
+      <input class="input" id="empMotif" placeholder="Ex: Frigo + machine à café"></div>
+    <div class="field"><label>Montant emprunté (${DB.parametres.devise})</label>
+      <input class="input" id="empMontant" type="number" inputmode="numeric" placeholder="Ex: 300000"></div>
+    <div class="field"><label>Total à rembourser avec intérêts (facultatif)</label>
+      <input class="input" id="empTotal" type="number" inputmode="numeric" placeholder="Laissez vide s'il n'y a pas d'intérêts">
+      <div class="hint" style="margin-top:5px">Si vous devez rendre plus que le montant emprunté (intérêts), indiquez le total ici.</div></div>
+    <div class="field"><label>Date de l'emprunt</label>
+      <input class="input" id="empDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerEmprunt()">Enregistrer l'emprunt</button>
+    </div>
+  `);
+}
+
+function validerEmprunt(){
+  const preteur = $('#empPreteur').value.trim();
+  const motif = $('#empMotif').value.trim();
+  const montant = Number($('#empMontant').value)||0;
+  const total = Number($('#empTotal').value)||0;
+  const date = $('#empDate').value || auj();
+  if(!preteur){ toast('Indiquez qui vous a prêté','err'); return; }
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterEmprunt({date, preteur, motif, montant, montantARembourser: total});
+  toast('Emprunt enregistré ✓');
+  closeSheet();
+  go('emprunts');
+}
+
+function openEmpruntDetailSheet(empruntId){
+  const e = infosEmprunt(empruntId);
+  if(!e) return;
+  const pct = e.montantARembourser>0 ? Math.round((e.totalRembourse/e.montantARembourser)*100) : 0;
+  sheet(`
+    <h2>🏦 ${e.preteur}</h2>
+    <div class="s-sub">${e.motif||'Emprunt'} ${e.montantARembourser>e.montant?'• avec intérêts':''}</div>
+
+    <div class="metrics" style="margin-bottom:8px">
+      <div class="metric"><div class="m-label">À rembourser</div><div class="m-value mono">${fmt(e.montantARembourser)}</div></div>
+      <div class="metric accent"><div class="m-label">Reste</div><div class="m-value mono">${fmt(e.solde)}</div></div>
+    </div>
+    <div style="height:8px;background:var(--nuit);border-radius:4px;margin-bottom:14px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:var(--vert)"></div>
+    </div>
+    <div class="hint" style="margin-bottom:14px;text-align:center">Remboursé ${fmt(e.totalRembourse)} sur ${fmt(e.montantARembourser)} (${pct}%)</div>
+
+    ${e.solde>0 ? `
+    <div class="field"><label>Enregistrer un remboursement (${DB.parametres.devise})</label>
+      <input class="input" id="rembMontant" type="number" inputmode="numeric" placeholder="Montant remboursé"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="rembDate" type="date" value="${auj()}"></div>
+    <div class="btn-group" style="margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="rembourserToutEmprunt('${empruntId}')" style="flex:0 0 auto">Solder (${fmt(e.solde)})</button>
+      <button class="btn btn-ambre" onclick="validerRemboursement('${empruntId}')">Rembourser</button>
+    </div>
+    <div class="hint" style="margin-bottom:8px">Le remboursement sort de votre caisse (pas compté comme un coût de boisson).</div>
+    ` : `<div class="tip-ok" style="background:rgba(52,211,153,.12);border:1px solid var(--vert);border-radius:10px;padding:12px;text-align:center;color:var(--vert);font-weight:700;margin-bottom:12px">✓ Emprunt entièrement remboursé</div>`}
+
+    <div class="card">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">Historique des remboursements</div>
+      ${e.remboursements.length===0 ? '<div class="hint">Aucun remboursement pour le moment</div>' :
+        e.remboursements.map(r=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">💵 ${fmt(r.montant)} ${DB.parametres.devise}</div>
+          <div class="cat-meta">${dateFr(r.date)}${r.note?' • '+r.note:''}</div></div>
+        </div>`).join('')}
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-danger btn-sm" onclick="supprEmpruntUI('${empruntId}')" style="flex:0 0 auto">🗑️</button>
+      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
+    </div>
+  `);
+}
+
+function validerRemboursement(empruntId){
+  const montant = Number($('#rembMontant').value)||0;
+  const date = $('#rembDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  rembourserEmprunt({date, empruntId, montant});
+  toast('Remboursement enregistré ✓');
+  closeSheet();
+  go('emprunts');
+}
+function rembourserToutEmprunt(empruntId){
+  const solde = soldeEmprunt(empruntId);
+  if(solde<=0){ toast('Déjà soldé','err'); return; }
+  rembourserEmprunt({empruntId, montant:solde});
+  toast('Emprunt soldé ✓');
+  closeSheet();
+  go('emprunts');
+}
+function supprEmpruntUI(empruntId){
+  if(confirm('Supprimer cet emprunt et ses remboursements ? (mis en corbeille)')){
+    supprimerEmprunt(empruntId);
+    toast('Emprunt supprimé');
+    closeSheet();
+    go('emprunts');
+  }
+}
+
+// ============================================================
+//  CAFÉ — fenêtres d'ajout
+// ============================================================
+function openVenteCafeSheet(){
+  sheet(`
+    <h2>➕ Vente café</h2>
+    <div class="s-sub">L'argent rapporté par le vendeur pour le café (versement).</div>
+    <div class="field"><label>Montant reçu (${DB.parametres.devise})</label>
+      <input class="input" id="vcMontant" type="number" inputmode="numeric" placeholder="Ex: 6000"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="vcNote" placeholder="Ex: matin, soir…"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="vcDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerVenteCafe()">Enregistrer</button>
+    </div>
+  `);
+}
+function validerVenteCafe(){
+  const montant = Number($('#vcMontant').value)||0;
+  const note = $('#vcNote').value.trim();
+  const date = $('#vcDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterVenteCafe({date, montant, note});
+  toast('Vente café enregistrée ✓');
+  closeSheet();
+  go('cafe');
+}
+
+function openAchatCafeSheet(){
+  sheet(`
+    <h2>🛒 Achat café / accessoires</h2>
+    <div class="s-sub">Café, gobelets, sucre, lait…</div>
+    <div class="field"><label>Article</label>
+      <input class="input" id="acArticle" placeholder="Ex: Café en poudre, gobelets, sucre"></div>
+    <div class="field"><label>Montant (${DB.parametres.devise})</label>
+      <input class="input" id="acMontant" type="number" inputmode="numeric" placeholder="Ex: 8000"></div>
+    <div class="field"><label>Fournisseur (facultatif)</label>
+      <input class="input" id="acFourn" placeholder="Ex: Marché, boutique"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="acDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerAchatCafe()">Enregistrer</button>
+    </div>
+  `);
+}
+function validerAchatCafe(){
+  const article = $('#acArticle').value.trim();
+  const montant = Number($('#acMontant').value)||0;
+  const fournisseur = $('#acFourn').value.trim();
+  const date = $('#acDate').value || auj();
+  if(!article){ toast("Indiquez l'article",'err'); return; }
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterAchatCafe({date, article, montant, fournisseur});
+  toast('Achat café enregistré ✓');
+  closeSheet();
+  go('cafe');
+}
+
+function supprVenteCafeUI(id){
+  if(confirm('Supprimer cette vente café ? (mise en corbeille)')){
+    supprimerVenteCafe(id); toast('Supprimé'); go('cafe');
+  }
+}
+function supprAchatCafeUI(id){
+  if(confirm('Supprimer cet achat café ? (mis en corbeille)')){
+    supprimerAchatCafe(id); toast('Supprimé'); go('cafe');
+  }
 }
 
 </script>
