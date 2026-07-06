@@ -337,6 +337,8 @@ function dbVide(){
     remboursementsEmprunt: [], // {id, date, empruntId, montant, note}
     cafeAchats: [],    // {id, date, article, montant, fournisseur, note}  (café + accessoires)
     cafeVentes: [],    // {id, date, montant, note}  (vente café = versement du vendeur)
+    regularisationsCaisse: [], // {id, date, user, motif, ancienSolde, nouveauSolde, ecart}
+    archivesSemaines: [], // résumés des semaines clôturées {id, dateDebut, dateFin, ventes, ...}
     parametres: { boutique: 'Mon Frigo', devise: 'F' },
   };
 }
@@ -360,7 +362,14 @@ function chargerDB(){
     try{ DB = secours ? JSON.parse(secours) : dbVide(); }
     catch(e2){ DB = dbVide(); }
   }
-  // migration douce : champs manquants
+  // migration douce : recrée les champs manquants (sécurise aussi la restauration d'anciennes sauvegardes)
+  migrerDB();
+}
+
+/* Ajoute tous les champs manquants à DB (compatibilité anciennes versions).
+   Appelée au démarrage ET après chaque restauration de sauvegarde. */
+function migrerDB(){
+  if(!DB || typeof DB !== 'object') DB = dbVide();
   if(!DB.categories) DB.categories = JSON.parse(JSON.stringify(CAT_DEFAUT));
   if(!DB.produits) DB.produits = [];
   if(!('stockDepart' in DB)) DB.stockDepart = null;
@@ -380,6 +389,8 @@ function chargerDB(){
   if(!DB.remboursementsEmprunt) DB.remboursementsEmprunt = [];
   if(!DB.cafeAchats) DB.cafeAchats = [];
   if(!DB.cafeVentes) DB.cafeVentes = [];
+  if(!DB.regularisationsCaisse) DB.regularisationsCaisse = [];
+  if(!DB.archivesSemaines) DB.archivesSemaines = [];
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   // seuil d'alerte par catégorie (défaut 15)
   DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
@@ -1126,6 +1137,11 @@ function mouvementsCaisse(){
     mvts.push({ date: r.date, heure:'', type:'remboursement', sens:'-',
       libelle:'Remboursement emprunt'+(e?' — '+e.preteur:''), montant: r.montant, ref: r.id });
   }
+  // Régularisations de caisse (correction du solde : +/- selon l'écart)
+  for(const rc of (DB.regularisationsCaisse||[])){
+    mvts.push({ date: rc.date, heure:'zzz', type:'regulCaisse', sens: rc.ecart>=0?'+':'-',
+      libelle:'Régularisation caisse'+(rc.motif?' — '+rc.motif:''), montant: Math.abs(rc.ecart), ref: rc.id });
+  }
   // Trier par date puis heure (le départ reste en tête avec sa date 0000)
   mvts.sort((a,b)=>{
     if(a.date!==b.date) return a.date<b.date?-1:1;
@@ -1143,6 +1159,184 @@ function mouvementsCaisse(){
 function soldeCaisse(){
   const m = mouvementsCaisse();
   return m.length ? m[m.length-1].solde : 0;
+}
+
+/* Détail du solde de caisse, ventes mises à part (présentation demandée) */
+function detailCaisse(){  const depart = DB.soldeDepartCaisse || 0;
+  let fournisseurs = 0; for(const p of DB.paiements) fournisseurs += p.montant;
+  let depenses = 0; for(const d of DB.depenses) depenses += d.montant;
+  let remboursements = 0; for(const r of (DB.remboursementsEmprunt||[])) remboursements += r.montant;
+  let versements = 0; for(const v of DB.versements) versements += v.montant;
+  let regularisations = 0; for(const rc of (DB.regularisationsCaisse||[])) regularisations += rc.ecart;
+  let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
+  // Solde hors ventes = départ + versements − fournisseurs − dépenses − remboursements ± régul
+  const soldeHorsVentes = depart + versements - fournisseurs - depenses - remboursements + regularisations;
+  const soldeTotal = soldeHorsVentes + ventes;
+  return { depart, versements, fournisseurs, depenses, remboursements, regularisations, soldeHorsVentes, ventes, soldeTotal };
+}
+
+// ============================================================
+//  RÉSUMÉ & RAPPORT DE SEMAINE (trace hebdomadaire)
+// ============================================================
+function resumeSemaineActuelle(){
+  const dateDebut = (DB.stockDepart && DB.stockDepart.date) ? DB.stockDepart.date
+                    : (DB.inventaires[0] ? DB.inventaires[0].date : auj());
+  const dateFin = auj();
+  let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
+  let achats = 0; for(const a of DB.achats){ if(!a.reporte) achats += a.prixGlobal; }
+  let depenses = 0; for(const d of DB.depenses) depenses += d.montant;
+  const ben = beneficePeriode('2000-01-01','2999-12-31');   // toute la période en cours
+  const cafe = statsCafe();
+  let valeurStock = 0; for(const c of DB.categories){ const s = stockCategorie(c.id); if(s>0) valeurStock += s*c.prix; }
+  return {
+    dateDebut, dateFin, ventes, achats, depenses,
+    benefice: ben.benefice,
+    cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
+    soldeCaisseFin: soldeCaisse(), valeurStock,
+    detteFournisseurs: totalDettesFournisseurs(),
+    creancesClients: totalCreancesClients(),
+    detteEmprunts: totalDettesEmprunts()
+  };
+}
+
+/* Rapport lisible (à copier sur WhatsApp) — la vraie trace de la semaine */
+function rapportSemaineTexte(r){
+  r = r || resumeSemaineActuelle();
+  const dev = DB.parametres.devise;
+  const nom = (DB.parametres.boutique||'Mon commerce');
+  const L = [];
+  L.push('📊 ' + nom + ' — Rapport de semaine');
+  L.push('Du ' + dateFr(r.dateDebut) + ' au ' + dateFr(r.dateFin));
+  L.push('——————————————');
+  L.push('💵 Ventes boissons : ' + fmt(r.ventes) + ' ' + dev);
+  L.push('🛒 Achats boissons : ' + fmt(r.achats) + ' ' + dev);
+  L.push('💸 Dépenses : ' + fmt(r.depenses) + ' ' + dev);
+  L.push('📈 Bénéfice boissons : ' + fmt(r.benefice) + ' ' + dev);
+  if(r.cafeVentes || r.cafeAchats){
+    L.push('——————————————');
+    L.push('☕ Café');
+    L.push('   Ventes : ' + fmt(r.cafeVentes) + ' ' + dev);
+    L.push('   Achats : ' + fmt(r.cafeAchats) + ' ' + dev);
+    L.push('   Résultat : ' + fmt(r.cafeResultat) + ' ' + dev);
+  }
+  L.push('——————————————');
+  L.push('💰 Caisse en fin de semaine : ' + fmt(r.soldeCaisseFin) + ' ' + dev);
+  L.push('📦 Valeur du stock : ' + fmt(r.valeurStock) + ' ' + dev);
+  if(r.detteFournisseurs>0) L.push('🏢 Reste à payer fournisseurs : ' + fmt(r.detteFournisseurs) + ' ' + dev);
+  if(r.creancesClients>0) L.push('👥 Clients me doivent : ' + fmt(r.creancesClients) + ' ' + dev);
+  if(r.detteEmprunts>0) L.push('🏦 Reste emprunts : ' + fmt(r.detteEmprunts) + ' ' + dev);
+  return L.join('\n');
+}
+
+// ============================================================
+//  CLÔTURE DE SEMAINE / NOUVEAU DÉPART
+// ============================================================
+/* Démarre une nouvelle période : nouveau stock de départ = stock physique réel,
+   nouvelle caisse de départ = argent réel. Efface les mouvements de la période.
+   REPORTE les dettes (fournisseurs, emprunts) et GARDE les clients.
+   comptesStock = {catId: quantitéRéelle}, caisseReelle = nombre. */
+function cloturerSemaine({comptesStock, caisseReelle}){
+  // 0) Archiver le résumé de la semaine AVANT d'effacer
+  const resume = resumeSemaineActuelle();
+  if(!DB.archivesSemaines) DB.archivesSemaines = [];
+  DB.archivesSemaines.push({ id: uid('sem'), cloturLe: auj(), ...resume });
+  // 1) Capturer les dettes AVANT d'effacer
+  const dettesFournisseurs = [];
+  for(const f of DB.fournisseurs){
+    const solde = soldeFournisseur(f.id);
+    if(solde > 0) dettesFournisseurs.push({ fournisseurId: f.id, nom: f.nom, montant: solde });
+  }
+  const soldesEmprunts = DB.emprunts.map(e=>({ id: e.id, solde: soldeEmprunt(e.id) }));
+
+  // 2) Nouveau stock de départ = stock physique réel (+ coût moyen conservé pour le bénéfice)
+  const lignes = {}, couts = {};
+  for(const c of DB.categories){
+    const q = (comptesStock && (c.id in comptesStock)) ? (Number(comptesStock[c.id])||0) : stockCategorie(c.id);
+    lignes[c.id] = q;
+    couts[c.id] = Math.round(coutMoyenCategorie(c.id));
+  }
+
+  // 3) Effacer les mouvements de la période
+  DB.achats = [];
+  DB.inventaires = [];
+  DB.depenses = [];
+  DB.versements = [];
+  DB.paiements = [];
+  DB.regularisations = [];
+  DB.regularisationsCaisse = [];
+  DB.cafeVentes = [];
+  DB.cafeAchats = [];
+  DB.corbeille = [];
+  DB.remboursementsEmprunt = [];
+
+  // 4) Nouveau départ
+  DB.stockDepart = { date: auj(), modifie: null, lignes, couts };
+  DB.soldeDepartCaisse = Number(caisseReelle)||0;
+
+  // 5) Reporter les dettes fournisseurs (achat "Solde reporté", catégorie nulle → aucun impact stock/coût)
+  for(const d of dettesFournisseurs){
+    DB.achats.push({
+      id: uid('ach'), date: auj(), fournisseurId: d.fournisseurId, fournisseur: d.nom,
+      produit: 'Solde reporté', categorieId: null, cartons:0, contenu:0, quantite:0,
+      prixGlobal: d.montant, prixUnitaire:0, montantPaye:0, reporte:true
+    });
+  }
+
+  // 6) Reporter les emprunts : garder le reste dû, remboursements remis à zéro
+  for(const se of soldesEmprunts){
+    const e = DB.emprunts.find(x=>x.id===se.id);
+    if(e){ e.montant = se.solde; e.montantARembourser = se.solde; e.date = auj(); }
+  }
+  DB.emprunts = DB.emprunts.filter(e=> soldeEmprunt(e.id) > 0);  // retirer les emprunts soldés
+
+  // 7) Clients : carnet gardé tel quel (soldes conservés, séparés de la caisse)
+
+  sauverDB();
+  return {
+    dettesReportees: dettesFournisseurs.length,
+    empruntsReportes: DB.emprunts.length,
+    nouvelleCaisse: DB.soldeDepartCaisse,
+    stockDepart: lignes
+  };
+}
+
+
+// ============================================================
+//  RÉGULARISATION DE CAISSE (aligner le solde sur l'argent réel)
+// ============================================================
+/* Écart : argent réel compté - solde théorique */
+function ecartCaisse(physique){
+  return (Number(physique)||0) - soldeCaisse();
+}
+
+/* Régulariser la caisse : aligne le solde théorique sur l'argent compté.
+   Ne modifie NI ventes NI dépenses ; ajoute une correction tracée. */
+function regulariserCaisse({physique, motif, user, date}){
+  const theo = soldeCaisse();
+  const phys = Number(physique);
+  if(isNaN(phys)) return null;
+  const ecart = phys - theo;
+  if(ecart === 0) return null;      // rien à corriger
+  const rc = {
+    id: uid('rc'), date: date||auj(),
+    user: (user||'').trim() || 'Gérant',
+    motif: (motif||'').trim() || 'Non précisé',
+    ancienSolde: theo, nouveauSolde: phys, ecart
+  };
+  DB.regularisationsCaisse.push(rc);
+  sauverDB();
+  return rc;
+}
+
+function historiqueRegulCaisse(){
+  return [...(DB.regularisationsCaisse||[])].sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function supprimerRegulCaisse(id){
+  const rc = (DB.regularisationsCaisse||[]).find(x=>x.id===id);
+  if(rc) versCorbeille('regulCaisse', rc, 'Régularisation caisse du '+dateFr(rc.date));
+  DB.regularisationsCaisse = (DB.regularisationsCaisse||[]).filter(x=>x.id!==id);
+  sauverDB();
 }
 
 /* Définir le solde de départ de la caisse */
@@ -1339,6 +1533,9 @@ function ajouterCreance({date, clientNom, montant, note}){
 function payerClient({date, clientId, montant, note}){
   montant = Number(montant)||0;
   if(montant<=0 || !clientId) return null;
+  const reste = soldeClient(clientId);
+  if(reste<=0) return null;              // rien à payer
+  if(montant > reste) montant = reste;   // ne pas encaisser plus que le dû
   const p = { id: uid('rcli'), date: date||auj(), clientId, montant, note:(note||'').trim() };
   DB.paiementsClients.push(p);
   sauverDB();
@@ -1363,7 +1560,7 @@ function infosClient(clientId){
 }
 
 function totalCreancesClients(){
-  return DB.clients.reduce((s,c)=>s+soldeClient(c.id),0);
+  return (DB.clients||[]).reduce((s,c)=>s+soldeClient(c.id),0);
 }
 
 // ============================================================
@@ -1391,6 +1588,9 @@ function ajouterEmprunt({date, preteur, motif, montant, montantARembourser}){
 function rembourserEmprunt({date, empruntId, montant, note}){
   montant = Number(montant)||0;
   if(montant<=0 || !empruntId) return null;
+  const reste = soldeEmprunt(empruntId);
+  if(reste<=0) return null;              // déjà soldé
+  if(montant > reste) montant = reste;   // ne pas rembourser plus que le dû
   const r = { id: uid('remb'), date: date||auj(), empruntId, montant, note:(note||'').trim() };
   DB.remboursementsEmprunt.push(r);
   sauverDB();
@@ -1415,7 +1615,7 @@ function infosEmprunt(empruntId){
 }
 
 function totalDettesEmprunts(){
-  return DB.emprunts.reduce((s,e)=> s + Math.max(0, soldeEmprunt(e.id)), 0);
+  return (DB.emprunts||[]).reduce((s,e)=> s + Math.max(0, soldeEmprunt(e.id)), 0);
 }
 
 function supprimerEmprunt(id){
@@ -1469,8 +1669,8 @@ function statsCafe(debut, fin){
   const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
   let ventes = 0, achats = 0;
   const ventesListe = [], achatsListe = [];
-  for(const v of DB.cafeVentes){ if(dans(v.date)){ ventes += v.montant; ventesListe.push(v); } }
-  for(const a of DB.cafeAchats){ if(dans(a.date)){ achats += a.montant; achatsListe.push(a); } }
+  for(const v of (DB.cafeVentes||[])){ if(dans(v.date)){ ventes += v.montant; ventesListe.push(v); } }
+  for(const a of (DB.cafeAchats||[])){ if(dans(a.date)){ achats += a.montant; achatsListe.push(a); } }
   return { ventes, achats, resultat: ventes - achats, ventesListe, achatsListe };
 }
 
@@ -1499,6 +1699,7 @@ function restaurerCorbeille(id){
   else if(item.type==='emprunt'){ if(d.emprunt){ DB.emprunts.push(d.emprunt); (d.remboursements||[]).forEach(r=>DB.remboursementsEmprunt.push(r)); } }
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
   else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
+  else if(item.type==='regulCaisse'){ DB.regularisationsCaisse.push(d); }
   DB.corbeille = DB.corbeille.filter(x=>x.id!==id);
   sauverDB();
   return true;
@@ -1794,6 +1995,7 @@ function go(page){
   else if(page==='clients') { c.innerHTML = pageClients(); }
   else if(page==='emprunts') { c.innerHTML = pageEmprunts(); }
   else if(page==='cafe') { c.innerHTML = pageCafe(); }
+  else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
   else if(page==='plus') { c.innerHTML = pagePlus(); bindPlus(); }
@@ -1841,6 +2043,9 @@ function pageAccueil(){
         <div class="m-value mono">${fmt(s.resultatCaisse)}</div>
       </div>
     </div>
+
+    ${blocDetailCaisse()}
+    <button class="btn btn-ghost" onclick="go('caisse')" style="margin-bottom:16px">💰 Ouvrir la caisse</button>
 
     ${alertes.length ? `
     <div class="card">
@@ -2252,6 +2457,13 @@ function pagePlus(){
       })()}
     </div>
 
+    <div class="card" style="border-color:rgba(239,68,68,.4)">
+      <div class="card-head"><div class="card-title">🔄 Nouvelle semaine</div></div>
+      <div class="hint" style="margin-bottom:12px">Repartez à neuf avec votre stock réel et votre argent réel. Une sauvegarde est faite avant, et vos dettes (fournisseurs, clients, emprunts) sont gardées.</div>
+      <button class="btn btn-danger" onclick="openClotureSheet()">🔄 Clôturer la semaine / Nouveau départ</button>
+      <button class="btn btn-ghost" onclick="go('archives')" style="margin-top:10px">📅 Historique des semaines${(DB.archivesSemaines&&DB.archivesSemaines.length)?' ('+DB.archivesSemaines.length+')':''}</button>
+    </div>
+
     <div class="card">
       <div class="card-head"><div class="card-title">📊 Comptabilité</div></div>
       <div class="btn-group" style="flex-wrap:wrap">
@@ -2352,7 +2564,7 @@ function pagePlus(){
     </div>
 
     <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
-      FRIGO v1.0 • Vos données restent sur votre téléphone
+      FRIGO • version du 21-06 (Clôture ✓) • Vos données restent sur votre téléphone
     </div>
   </div>`;
 }
@@ -2389,6 +2601,10 @@ function pageCaisse(){
       <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
       <button class="chip" onclick="go('stock')">📦 Stock</button>
     </div>
+
+    <button class="btn btn-ambre" onclick="openRegulariserCaisseSheet()" style="margin-bottom:16px">⚖️ Régulariser la caisse (compter l'argent réel)</button>
+
+    ${blocDetailCaisse()}
 
     <div class="card">
       <div class="card-head"><div class="card-title">🧮 Contrôle vendeur</div></div>
@@ -2557,7 +2773,7 @@ function setBeneficePeriode(p){ BENEFICE_PERIODE = p; go('benefice'); }
 
 // ---------- PAGE CLIENTS À CRÉDIT ----------
 function pageClients(){
-  const clients = DB.clients.map(c=>infosClient(c.id)).sort((a,b)=> b.solde - a.solde);
+  const clients = (DB.clients||[]).map(c=>infosClient(c.id)).sort((a,b)=> b.solde - a.solde);
   const totalDu = totalCreancesClients();
   return `
   <div class="page">
@@ -2671,7 +2887,7 @@ function graphBarresH(data){
 
 // ---------- PAGE EMPRUNTS / PRÊTS ----------
 function pageEmprunts(){
-  const emprunts = DB.emprunts.map(e=>infosEmprunt(e.id)).sort((a,b)=> b.solde - a.solde);
+  const emprunts = (DB.emprunts||[]).map(e=>infosEmprunt(e.id)).sort((a,b)=> b.solde - a.solde);
   const totalDu = totalDettesEmprunts();
   return `
   <div class="page">
@@ -2779,6 +2995,84 @@ function pageCafe(){
 }
 function setCafePeriode(p){ window._cafePeriode = p; go('cafe'); }
 
+// ---------- BLOC DÉTAIL DE LA CAISSE (ventes à part) ----------
+function blocDetailCaisse(){
+  const d = detailCaisse();
+  const dev = DB.parametres.devise;
+  const ligne = (label, val, sens)=>{
+    if(val===0 && (sens==='+v'||sens==='reg')) return ''; // masquer versement/régul si 0
+    let signe = '', couleur = 'var(--texte)';
+    if(sens==='+' || sens==='+v'){ signe='+'; couleur='var(--vert)'; }
+    else if(sens==='-'){ signe='−'; couleur='var(--rouge)'; val=Math.abs(val); }
+    else if(sens==='reg'){ signe = d.regularisations>=0?'+':'−'; couleur = d.regularisations>=0?'var(--vert)':'var(--rouge)'; val=Math.abs(val); }
+    return `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px">
+      <span style="color:var(--texte-doux)">${label}</span>
+      <span style="color:${couleur};font-weight:600;font-variant-numeric:tabular-nums">${signe}${fmt(val)}</span></div>`;
+  };
+  return `
+    <div class="card">
+      <div class="card-head"><div class="card-title">🧾 Détail de la caisse</div></div>
+      ${ligne('Argent de départ', d.depart, '+')}
+      ${ligne('Versements du vendeur', d.versements, '+v')}
+      ${ligne('Paiements fournisseurs', d.fournisseurs, '-')}
+      ${ligne('Dépenses', d.depenses, '-')}
+      ${ligne('Remboursements emprunt', d.remboursements, '-')}
+      ${ligne('Régularisations', d.regularisations, 'reg')}
+      <div style="border-top:1px solid var(--bord);margin:8px 0"></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:700">
+        <span>Solde (sans ventes)</span>
+        <span style="font-variant-numeric:tabular-nums;color:${d.soldeHorsVentes<0?'var(--rouge)':'var(--texte)'}">${d.soldeHorsVentes<0?'−':''}${fmt(Math.abs(d.soldeHorsVentes))}</span>
+      </div>
+      ${ligne('Ventes', d.ventes, '+')}
+      <div style="border-top:2px solid var(--givre);margin:8px 0"></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:17px;font-weight:800">
+        <span>SOLDE EN CAISSE</span>
+        <span style="color:var(--givre);font-variant-numeric:tabular-nums">${fmt(d.soldeTotal)} ${dev}</span>
+      </div>
+    </div>`;
+}
+
+// ---------- PAGE HISTORIQUE DES SEMAINES ----------
+function pageArchives(){
+  const arch = [...(DB.archivesSemaines||[])].sort((a,b)=> a.cloturLe<b.cloturLe?1:-1);
+  const dev = DB.parametres.devise;
+  return `
+  <div class="page">
+    <div class="page-title">📅 Historique des semaines</div>
+    <div class="page-sub">Chaque semaine clôturée est gardée ici.</div>
+
+    ${arch.length===0 ? `
+      <div class="empty"><div class="e-ic">📅</div><div>Aucune semaine clôturée</div>
+      <div style="font-size:13px;margin-top:6px">Quand vous clôturez une semaine, son résumé apparaît ici</div></div>
+    ` : arch.map((s,i)=>`
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-head"><div class="card-title" style="font-size:15px">Semaine ${arch.length-i} — ${dateFr(s.dateDebut)} → ${dateFr(s.dateFin)}</div></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">💵 Ventes</span><span style="font-weight:600">${fmt(s.ventes)} ${dev}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">📈 Bénéfice boissons</span><span style="font-weight:600;color:var(--vert)">${fmt(s.benefice)} ${dev}</span></div>
+        ${(s.cafeVentes||s.cafeAchats)?`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">☕ Résultat café</span><span style="font-weight:600">${fmt(s.cafeResultat)} ${dev}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">💰 Caisse fin</span><span style="font-weight:600">${fmt(s.soldeCaisseFin)} ${dev}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">📦 Valeur stock</span><span style="font-weight:600">${fmt(s.valeurStock)} ${dev}</span></div>
+        <button class="btn btn-ghost btn-sm" onclick="voirRapportArchive('${s.id}')" style="margin-top:8px">📋 Voir / copier le rapport</button>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function voirRapportArchive(id){
+  const s = (DB.archivesSemaines||[]).find(x=>x.id===id);
+  if(!s) return;
+  const rapport = rapportSemaineTexte(s).replace(/</g,'&lt;');
+  sheet(`
+    <h2>📋 Rapport de la semaine</h2>
+    <div class="s-sub">${dateFr(s.dateDebut)} → ${dateFr(s.dateFin)}</div>
+    <div class="field">
+      <textarea id="archRapport" class="input" readonly rows="11" onclick="this.select()" style="font-size:12px;line-height:1.5">${rapport}</textarea>
+      <button class="btn btn-ambre" onclick="copierTexteClot('archRapport')" style="margin-top:8px">📋 Copier le rapport</button>
+    </div>
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+
 /* ===== actions.js ===== */
 /* ============================================================
    FRIGO — Actions page Plus + Initialisation
@@ -2820,6 +3114,7 @@ function bindPlus(){
         const imported = JSON.parse(ev.target.result);
         if(!imported.categories){ toast('Fichier invalide','err'); return; }
         DB = imported;
+        migrerDB();          // recrée les champs manquants (emprunts, café…) des anciennes sauvegardes
         sauverDB();
         toast('Données restaurées ✓');
         renderApp();
@@ -4237,6 +4532,222 @@ function supprAchatCafeUI(id){
   if(confirm('Supprimer cet achat café ? (mis en corbeille)')){
     supprimerAchatCafe(id); toast('Supprimé'); go('cafe');
   }
+}
+
+// ============================================================
+//  RÉGULARISATION DE CAISSE
+// ============================================================
+function openRegulariserCaisseSheet(){
+  const theo = soldeCaisse();
+  sheet(`
+    <h2>⚖️ Régulariser la caisse</h2>
+    <div class="s-sub">Comptez l'argent réel dans la caisse. FRIGO ajuste le solde si besoin (erreur de monnaie, oubli…). Vos ventes et dépenses ne changent pas.</div>
+
+    <div class="metric accent" style="margin-bottom:14px">
+      <div class="m-label">Solde théorique (ce que FRIGO calcule)</div>
+      <div class="m-value mono">${fmt(theo)} ${DB.parametres.devise}</div>
+    </div>
+
+    <div class="field">
+      <label>Argent réel compté dans la caisse (${DB.parametres.devise})</label>
+      <input class="input" id="rcPhys" type="number" inputmode="numeric" placeholder="Ex: ${theo}" oninput="majEcartCaisse()">
+    </div>
+    <div id="rcEcart" class="hint" style="margin-bottom:8px"></div>
+
+    <div class="field">
+      <label>Motif de l'écart</label>
+      <select class="input" id="rcMotif">
+        <option value="Erreur de monnaie">Erreur de monnaie</option>
+        <option value="Oubli de saisie">Oubli de saisie</option>
+        <option value="Perte / vol">Perte / vol</option>
+        <option value="Erreur de comptage">Erreur de comptage</option>
+        <option value="Autre">Autre</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Régularisé par (votre nom)</label>
+      <input class="input" id="rcUser" placeholder="Ex: Abdoulaye" value="${(DB.parametres && DB.parametres.gerant)||''}">
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="confirmerRegulCaisse()">✅ Régulariser</button>
+    </div>
+
+    ${(DB.regularisationsCaisse && DB.regularisationsCaisse.length) ?
+      `<button class="btn btn-ghost" onclick="ouvrirHistoriqueRegulCaisse()" style="margin-top:12px">🕑 Voir l'historique (${DB.regularisationsCaisse.length})</button>` : ''}
+  `);
+}
+
+function majEcartCaisse(){
+  const el = $('#rcPhys');
+  const zone = $('#rcEcart');
+  if(!el || !zone) return;
+  if(el.value===''){ zone.textContent=''; return; }
+  const ec = ecartCaisse(el.value);
+  if(ec===0){ zone.innerHTML = '<span style="color:var(--vert)">✓ La caisse est juste, aucun écart.</span>'; }
+  else if(ec<0){ zone.innerHTML = '<span style="color:var(--rouge)">Il manque '+fmt(-ec)+' '+DB.parametres.devise+' par rapport au théorique.</span>'; }
+  else { zone.innerHTML = '<span style="color:var(--vert)">Il y a '+fmt(ec)+' '+DB.parametres.devise+' de plus que le théorique.</span>'; }
+}
+
+function confirmerRegulCaisse(){
+  const el = $('#rcPhys');
+  if(!el || el.value===''){ toast("Comptez l'argent réel",'err'); return; }
+  const physique = Number(el.value)||0;
+  const motif = $('#rcMotif') ? $('#rcMotif').value : '';
+  const user = $('#rcUser') ? $('#rcUser').value.trim() : '';
+  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = user; }
+
+  if(ecartCaisse(physique)===0){ toast('La caisse est déjà juste','err'); return; }
+  const rc = regulariserCaisse({physique, motif, user});
+  if(!rc){ toast('Aucun écart à régulariser','err'); return; }
+  toast('Caisse régularisée ✓');
+  closeSheet();
+  go('caisse');
+}
+
+function ouvrirHistoriqueRegulCaisse(){
+  const hist = historiqueRegulCaisse();
+  const dev = DB.parametres.devise;
+  sheet(`
+    <h2>🕑 Historique — régularisations caisse</h2>
+    <div class="s-sub">Traçabilité : date, personne, motif et écart.</div>
+    ${hist.length===0 ? `<div class="empty"><div class="e-ic">🕑</div><div>Aucune régularisation</div></div>` :
+      hist.map(rc=>`
+        <div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div style="font-weight:700">${dateFr(rc.date)}</div>
+              <div class="cat-meta">par ${rc.user} • motif : ${rc.motif}</div>
+              <div style="margin-top:6px;font-size:13px">${fmt(rc.ancienSolde)} → <b>${fmt(rc.nouveauSolde)}</b> ${dev}
+                <span style="color:${rc.ecart<0?'var(--rouge)':'var(--vert)'};font-weight:700"> (${rc.ecart>0?'+':''}${fmt(rc.ecart)})</span></div>
+            </div>
+            <button class="btn btn-sm btn-ghost" onclick="supprRegulCaisseUI('${rc.id}')">🗑️</button>
+          </div>
+        </div>`).join('')
+    }
+    <div class="btn-group"><button class="btn btn-ghost" onclick="openRegulariserCaisseSheet()">← Retour</button></div>
+  `);
+}
+function supprRegulCaisseUI(id){
+  if(confirm('Annuler cette régularisation de caisse ? (mise en corbeille)')){
+    supprimerRegulCaisse(id);
+    toast('Annulée');
+    ouvrirHistoriqueRegulCaisse();
+  }
+}
+
+// ============================================================
+//  CLÔTURE DE SEMAINE / NOUVEAU DÉPART
+// ============================================================
+/* Télécharge une sauvegarde JSON (sécurité avant clôture) */
+function telechargerSauvegarde(){
+  try{
+    const blob = new Blob([JSON.stringify(DB)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'frigo_sauvegarde_' + auj() + '.json';
+    a.click(); URL.revokeObjectURL(url);
+    return true;
+  }catch(e){ return false; }
+}
+
+function openClotureSheet(){
+  const cats = DB.categories;
+  const caisse = soldeCaisse();
+  sheet(`
+    <h2>🔄 Clôturer la semaine</h2>
+    <div class="s-sub">Démarrez une nouvelle semaine avec votre stock réel et votre argent réel. Une sauvegarde sera faite automatiquement avant.</div>
+
+    <div class="warn" style="background:#2a1e0e;border:1px solid var(--orange);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px">
+      <b style="color:var(--orange)">⚠️ Ce qui va se passer</b><br>
+      <span style="color:var(--texte-doux)">
+      • Vos achats, ventes, dépenses et café de la semaine seront <b>effacés</b><br>
+      • Le stock repartira de vos <b>comptages réels</b> ci-dessous<br>
+      • La caisse repartira de votre <b>argent réel</b><br>
+      • Vos <b>dettes sont gardées</b> : fournisseurs, clients, emprunts<br>
+      • Une <b>sauvegarde</b> sera téléchargée avant (rien n'est perdu)</span>
+    </div>
+
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--texte-doux);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Stock physique réel (comptez le frigo)</label>
+    ${cats.map(c=>{
+      const stk = stockCategorie(c.id);
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bord)">
+        <span class="cat-dot" style="background:${c.couleur};flex:0 0 auto"></span>
+        <div style="flex:1;min-width:0"><div class="cat-name">${c.nom}</div>
+        <div class="cat-meta">théorique : ${fmt(stk)}</div></div>
+        <input class="input clotStock" data-cat="${c.id}" type="number" inputmode="numeric" value="${stk}" style="width:80px;flex:0 0 auto">
+      </div>`;
+    }).join('')}
+
+    <div class="field" style="margin-top:16px">
+      <label>Argent réel dans la caisse (${DB.parametres.devise})</label>
+      <input class="input" id="clotCaisse" type="number" inputmode="numeric" value="${caisse}">
+      <div class="hint" style="margin-top:5px">Comptez l'argent réel. Théorique actuel : ${fmt(caisse)}</div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-danger" onclick="confirmerCloture()">🔄 Sauvegarder et clôturer</button>
+    </div>
+  `);
+}
+
+function confirmerCloture(){
+  const comptesStock = {};
+  document.querySelectorAll('.clotStock').forEach(inp=>{
+    const cid = inp.dataset.cat;
+    comptesStock[cid] = (inp.value==='') ? stockCategorie(cid) : (Number(inp.value)||0);
+  });
+  const caisseReelle = ($('#clotCaisse') && $('#clotCaisse').value!=='') ? (Number($('#clotCaisse').value)||0) : soldeCaisse();
+  window._clotData = { comptesStock, caisseReelle };
+
+  const rapport = rapportSemaineTexte().replace(/</g,'&lt;');
+  window._clotBackup = JSON.stringify(DB);
+  sheet(`
+    <h2>\u2705 Gardez votre trace, puis cl\u00f4turez</h2>
+    <div class="s-sub">Copiez le rapport de la semaine sur WhatsApp \u2014 vous pourrez le revoir \u00e0 tout moment.</div>
+    <div class="warn" style="background:#2a1e0e;border:1px solid var(--orange);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px">
+      <span style="color:var(--texte-doux)">Ensuite la semaine repart \u00e0 z\u00e9ro (stock et caisse au r\u00e9el). Vos dettes (fournisseurs, clients, emprunts) sont gard\u00e9es.</span>
+    </div>
+    <div class="field">
+      <label>\ud83d\udccb Rapport de la semaine (appui long \u2192 Tout s\u00e9lectionner \u2192 Copier)</label>
+      <textarea id="clotRapport" class="input" readonly rows="10" onclick="this.select()" style="font-size:12px;line-height:1.5">${rapport}</textarea>
+      <button class="btn btn-ambre" onclick="copierTexteClot('clotRapport')" style="margin-top:8px">\ud83d\udccb Copier le rapport</button>
+      <div class="hint" style="margin-top:6px">Collez-le dans une discussion WhatsApp (ex: \u00e0 vous-m\u00eame). C'est votre archive lisible.</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="copierSauvegardeComplete()" style="margin-bottom:6px">\ud83d\udcbe Copier aussi la sauvegarde compl\u00e8te (pour restaurer les donn\u00e9es)</button>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="openClotureSheet()">\u2190 Retour</button>
+      <button class="btn btn-danger" onclick="executerCloture()">\u2705 Cl\u00f4turer maintenant</button>
+    </div>
+  `);
+}
+
+function copierTexteClot(id){
+  const ta = document.getElementById(id);
+  let ok=false;
+  try{ ta.select(); ta.setSelectionRange(0,999999); ok=document.execCommand('copy'); }catch(e){}
+  try{ if(navigator.clipboard && ta){ navigator.clipboard.writeText(ta.value); ok=true; } }catch(e){}
+  toast(ok?'Copi\u00e9 \u2713':'S\u00e9lectionnez le texte et copiez-le');
+}
+
+function copierSauvegardeComplete(){
+  let ok=false;
+  try{ if(navigator.clipboard){ navigator.clipboard.writeText(window._clotBackup||''); ok=true; } }catch(e){}
+  telechargerSauvegarde();
+  toast(ok?'Sauvegarde compl\u00e8te copi\u00e9e \u2713':'Sauvegarde t\u00e9l\u00e9charg\u00e9e');
+}
+
+function executerCloture(){
+  const d = window._clotData;
+  if(!d){ toast('Erreur, recommencez','err'); return; }
+  telechargerSauvegarde();
+  cloturerSemaine(d);
+  window._clotData = null; window._clotBackup = null;
+  toast('Nouvelle semaine d\u00e9marr\u00e9e \u2713');
+  closeSheet();
+  go('accueil');
 }
 
 </script>
