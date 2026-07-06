@@ -389,6 +389,7 @@ function migrerDB(){
   if(!DB.remboursementsEmprunt) DB.remboursementsEmprunt = [];
   if(!DB.cafeAchats) DB.cafeAchats = [];
   if(!DB.cafeVentes) DB.cafeVentes = [];
+  if(DB.cafeSoldeReporte == null) DB.cafeSoldeReporte = 0;
   if(!DB.regularisationsCaisse) DB.regularisationsCaisse = [];
   if(!DB.archivesSemaines) DB.archivesSemaines = [];
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
@@ -1192,6 +1193,7 @@ function resumeSemaineActuelle(){
     dateDebut, dateFin, ventes, achats, depenses,
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
+    cafeSoldeTotal: cafe.soldeTotal,
     soldeCaisseFin: soldeCaisse(), valeurStock,
     detteFournisseurs: totalDettesFournisseurs(),
     creancesClients: totalCreancesClients(),
@@ -1218,6 +1220,7 @@ function rapportSemaineTexte(r){
     L.push('   Ventes : ' + fmt(r.cafeVentes) + ' ' + dev);
     L.push('   Achats : ' + fmt(r.cafeAchats) + ' ' + dev);
     L.push('   Résultat : ' + fmt(r.cafeResultat) + ' ' + dev);
+    if(r.cafeSoldeTotal!=null) L.push('   💰 Solde café : ' + fmt(r.cafeSoldeTotal) + ' ' + dev);
   }
   L.push('——————————————');
   L.push('💰 Caisse en fin de semaine : ' + fmt(r.soldeCaisseFin) + ' ' + dev);
@@ -1264,6 +1267,13 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.paiements = [];
   DB.regularisations = [];
   DB.regularisationsCaisse = [];
+  // Café : reporter le solde (à-nouveau) avant d'effacer l'activité de la semaine
+  {
+    let cv = 0, ca = 0;
+    for(const v of (DB.cafeVentes||[])) cv += v.montant;
+    for(const a of (DB.cafeAchats||[])) ca += a.montant;
+    DB.cafeSoldeReporte = (DB.cafeSoldeReporte || 0) + cv - ca;
+  }
   DB.cafeVentes = [];
   DB.cafeAchats = [];
   DB.corbeille = [];
@@ -1671,7 +1681,9 @@ function statsCafe(debut, fin){
   const ventesListe = [], achatsListe = [];
   for(const v of (DB.cafeVentes||[])){ if(dans(v.date)){ ventes += v.montant; ventesListe.push(v); } }
   for(const a of (DB.cafeAchats||[])){ if(dans(a.date)){ achats += a.montant; achatsListe.push(a); } }
-  return { ventes, achats, resultat: ventes - achats, ventesListe, achatsListe };
+  const soldeReporte = DB.cafeSoldeReporte || 0;
+  const resultat = ventes - achats;
+  return { ventes, achats, resultat, soldeReporte, soldeTotal: soldeReporte + resultat, ventesListe, achatsListe };
 }
 
 // ============================================================
@@ -2449,7 +2461,9 @@ function pagePlus(){
       <div class="card-head"><div class="card-title">🛡️ Protéger mes données</div></div>
       <div class="hint" style="margin-bottom:12px">Téléchargez une sauvegarde sur votre téléphone. À faire souvent (chaque soir par exemple).</div>
       <button class="btn btn-ambre" id="btnExportBig" style="margin-bottom:10px">📥 Sauvegarder maintenant</button>
-      <button class="btn btn-ghost" id="btnImportBig">📤 Restaurer une sauvegarde</button>
+      <button class="btn btn-ghost" onclick="openCopierSauvegardeSheet()" style="margin-bottom:10px">📋 Copier ma sauvegarde (pour WhatsApp)</button>
+      <button class="btn btn-ghost" id="btnImportBig" style="margin-bottom:10px">📤 Restaurer depuis un fichier</button>
+      <button class="btn btn-ghost" onclick="openRestaurerTexteSheet()">📥 Restaurer depuis un texte collé</button>
       <input type="file" id="importFileBig" accept=".json" style="display:none">
       ${(() => {
         const t = localStorage.getItem(DB_KEY+'_time');
@@ -2962,9 +2976,26 @@ function pageCafe(){
       <div class="metric gold"><div class="m-label">Ventes café (${titre})</div><div class="m-value mono">${fmt(s.ventes)} ${dev}</div></div>
       <div class="metric"><div class="m-label">Achats café</div><div class="m-value mono">${fmt(s.achats)} ${dev}</div></div>
     </div>
-    <div class="metric ${s.resultat>=0?'accent':''}" style="margin-bottom:16px;${s.resultat<0?'border-color:var(--rouge)':''}">
-      <div class="m-label">Résultat café (bénéfice)</div>
+    <div class="metric ${s.resultat>=0?'accent':''}" style="margin-bottom:12px;${s.resultat<0?'border-color:var(--rouge)':''}">
+      <div class="m-label">Résultat café (${titre})</div>
       <div class="m-value mono" style="${s.resultat<0?'color:var(--rouge)':''}">${fmt(s.resultat)} ${dev}</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+        <span style="color:var(--texte-doux)">Solde reporté (à nouveau)</span>
+        <span style="font-weight:600">${fmt(s.soldeReporte)} ${dev}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+        <span style="color:var(--texte-doux)">+ Résultat (toute la période)</span>
+        <span style="font-weight:600">${fmt(statsCafe().resultat)} ${dev}</span>
+      </div>
+      <div style="border-top:2px solid var(--givre,#5eead4);margin:8px 0"></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:16px;font-weight:800">
+        <span>💰 Solde café</span>
+        <span style="color:var(--givre,#5eead4)">${fmt(statsCafe().soldeTotal)} ${dev}</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openSoldeCafeSheet()" style="margin-top:8px">✏️ Régler le solde reporté</button>
     </div>
 
     <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
@@ -4750,6 +4781,86 @@ function executerCloture(){
   go('accueil');
 }
 
+function openCopierSauvegardeSheet(){
+  const backup = JSON.stringify(DB).replace(/</g,'&lt;');
+  sheet(`
+    <h2>📋 Copier ma sauvegarde</h2>
+    <div class="s-sub">Copiez ce texte et gardez-le (WhatsApp à vous-même, Notes…). Il contient toutes vos données et pourra être restauré.</div>
+    <div class="field">
+      <label>Votre sauvegarde (appui long → Tout sélectionner → Copier)</label>
+      <textarea id="copyBackup" class="input" readonly rows="9" onclick="this.select()" style="font-family:monospace;font-size:10px;line-height:1.3">${backup}</textarea>
+      <button class="btn btn-ambre" onclick="copierTexteBackup('copyBackup')" style="margin-top:8px">📋 Copier la sauvegarde</button>
+      <div class="hint" style="margin-top:6px">Envoyez-la sur votre WhatsApp. Pour la remettre plus tard : « Restaurer depuis un texte collé ».</div>
+    </div>
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+
+function copierTexteBackup(id){
+  const ta = document.getElementById(id);
+  let ok=false;
+  try{ ta.select(); ta.setSelectionRange(0,999999); ok=document.execCommand('copy'); }catch(e){}
+  try{ if(navigator.clipboard && ta){ navigator.clipboard.writeText(ta.value); ok=true; } }catch(e){}
+  toast(ok?'Copié ✓':'Sélectionnez le texte et copiez-le');
+}
+
+function openRestaurerTexteSheet(){
+  sheet(`
+    <h2>📥 Restaurer depuis un texte</h2>
+    <div class="s-sub">Collez une sauvegarde que vous aviez copiée (depuis WhatsApp, Notes…).</div>
+    <div class="warn" style="background:#3a1414;border:1px solid var(--rouge,#ef4444);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px">
+      <b style="color:var(--rouge,#ef4444)">⚠️ Attention</b><br>
+      <span style="color:var(--texte-doux,#94a3b8)">Cela remplacera les données actuelles par celles de la sauvegarde collée.</span>
+    </div>
+    <div class="field">
+      <label>Collez votre sauvegarde ici (appui long → Coller)</label>
+      <textarea id="restoreTexte" class="input" rows="8" placeholder="Collez ici le long texte de votre sauvegarde…" style="font-family:monospace;font-size:10px;line-height:1.3"></textarea>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="restaurerDepuisTexte()">📥 Restaurer</button>
+    </div>
+  `);
+}
+
+function restaurerDepuisTexte(){
+  const ta = document.getElementById('restoreTexte');
+  const txt = ta ? ta.value.trim() : '';
+  if(!txt){ toast('Collez d\u2019abord votre sauvegarde','err'); return; }
+  let data;
+  try{ data = JSON.parse(txt); }catch(e){ toast('Ce texte n\u2019est pas une sauvegarde valide','err'); return; }
+  if(!data || !data.categories){ toast('Sauvegarde invalide (pas de données FRIGO)','err'); return; }
+  DB = data;
+  migrerDB();
+  sauverDB();
+  toast('Données restaurées ✓');
+  closeSheet();
+  renderApp();
+}
+function openSoldeCafeSheet(){
+  const s = statsCafe();
+  sheet(`
+    <h2>✏️ Solde reporté du café</h2>
+    <div class="s-sub">L'argent que le café avait déjà avant cette semaine. Il s'ajoute au résultat pour donner le solde du café.</div>
+    <div class="field">
+      <label>Solde reporté (${DB.parametres.devise})</label>
+      <input class="input" id="soldeCafeInp" type="number" inputmode="numeric" value="${DB.cafeSoldeReporte||0}">
+      <div class="hint" style="margin-top:5px">Solde reporté actuel : ${fmt(s.soldeReporte)}. Ce sera reporté tout seul à chaque clôture.</div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="enregistrerSoldeCafe()">Enregistrer</button>
+    </div>
+  `);
+}
+function enregistrerSoldeCafe(){
+  const inp = document.getElementById('soldeCafeInp');
+  DB.cafeSoldeReporte = Number(inp.value)||0;
+  sauverDB();
+  toast('Solde reporté du café enregistré ✓');
+  closeSheet();
+  go('cafe');
+}
 </script>
 </body>
 </html>
