@@ -320,7 +320,7 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 90px;}
   <div class="header-row">
     <div>
       <h1>Mon Portefeuille</h1>
-      <div class="sub" id="headerSub">FCFA · suivi complet</div>
+      <div class="sub" id="headerSub">FCFA · suivi complet · v8</div>
     </div>
     <div style="display:flex;gap:8px;">
       <button class="lock-btn" onclick="openSauvegardeModal()" title="Sauvegarde">💾</button>
@@ -330,6 +330,7 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 90px;}
 </header>
 <nav class="tabs">
   <button data-tab="dashboard" class="active">Tableau de bord</button>
+  <button data-tab="promotion">Promotion</button>
   <button data-tab="agenda">Agenda</button>
   <button data-tab="enfants">Enfants</button>
   <button data-tab="quotidien">Quotidien</button>
@@ -362,6 +363,50 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 90px;}
       <div id="dashCatBars"><div class="empty">Aucune dépense ce mois-ci.</div></div>
       <div style="text-align:right;margin-top:6px;font-size:.8rem;color:var(--ink-soft);">Total: <span class="mono" id="dashMoisTotal">0</span> FCFA</div>
     </div>
+  </section>
+
+  <!-- PROMOTION -->
+  <section class="section" id="tab-promotion">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <h2 style="margin:0;" id="promoNom">Cotisations promotion</h2>
+          <div style="font-size:.75rem;color:var(--ink-soft);margin-top:2px;" id="promoSousTitre">Trimestriel</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="openPromoReglages()">⚙️ Réglages</button>
+      </div>
+
+      <div style="margin:14px 0 10px;">
+        <label style="display:block;font-size:.72rem;font-weight:600;margin-bottom:5px;color:var(--ink-soft);">Trimestre affiché</label>
+        <select id="promoTrimestreSel" onchange="renderPromotion()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--white);color:var(--ink);font-size:.9rem;"></select>
+      </div>
+
+      <div class="ledger-total" style="padding:14px 10px;">
+        <div class="label">Collecté ce trimestre</div>
+        <div class="amount" id="promoCollecte" style="color:var(--teal);">0 FCFA</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat owed"><div class="label">Ont payé</div><div class="val" id="promoNbPaye">0</div></div>
+        <div class="stat owe"><div class="label">Reste</div><div class="val" id="promoNbReste">0</div></div>
+      </div>
+      <button class="btn btn-ochre btn-block" onclick="rappelTrimestrielCalendrier()">📅 Rappel trimestriel (calendrier)</button>
+      <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="partagerPointWhatsapp()">📤 Envoyer le point WhatsApp</button>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <h2 style="margin:0;">Membres</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="openImportMembres()">⬆ Importer</button>
+          <button class="btn btn-outline btn-sm" onclick="openOverlay('overlayExportPromo')">⬇ Excel</button>
+        </div>
+      </div>
+      <input type="text" id="promoRecherche" placeholder="🔍 Rechercher un membre..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--white);color:var(--ink);font-size:.9rem;">
+      <button class="btn btn-primary btn-block" onclick="openMembreForm()">+ Ajouter un membre</button>
+    </div>
+
+    <div id="promoMembresList"></div>
+    <div class="empty" id="promoEmpty">Aucun membre. Ajoute-les un par un, ou importe la liste.</div>
   </section>
 
   <!-- AGENDA -->
@@ -517,6 +562,103 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 90px;}
       <button class="btn btn-ochre btn-block" onclick="closeOverlay('overlayQuick');openFixeForm()">📌 Une dépense fixe mensuelle</button>
       <button class="btn btn-ochre btn-block" onclick="closeOverlay('overlayQuick');openCreditForm()">🏦 Un crédit reçu (mutuelle)</button>
       <button class="btn btn-ochre btn-block" onclick="closeOverlay('overlayQuick');openPersonneForm()">🤝 Un crédit avec une personne</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Réglages promotion -->
+<div class="overlay" id="overlayPromoReglages">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('overlayPromoReglages')">✕</button>
+    <h3>Réglages de la promotion</h3>
+    <div class="field">
+      <label>Nom de la promotion</label>
+      <input type="text" id="prNom" placeholder="Ex: Promotion 2024">
+    </div>
+    <div class="field">
+      <label>Montant de la cotisation par trimestre (FCFA)</label>
+      <input type="number" id="prMontant" placeholder="0">
+    </div>
+    <div class="field">
+      <label>Année de début</label>
+      <select id="prAnnee"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeOverlay('overlayPromoReglages')">Annuler</button>
+      <button class="btn btn-primary" onclick="savePromoReglages()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Membre -->
+<div class="overlay" id="overlayMembre">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('overlayMembre')">✕</button>
+    <h3 id="membreTitle">Nouveau membre</h3>
+    <input type="hidden" id="meEditId" value="">
+    <div class="field">
+      <label>Nom du membre</label>
+      <input type="text" id="meNom" placeholder="Ex: Oumar Traoré">
+    </div>
+    <div class="field">
+      <label>Numéro WhatsApp (facultatif)</label>
+      <input type="tel" id="meTel" placeholder="Ex: 223 70 12 34 56 (avec indicatif)">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeOverlay('overlayMembre')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveMembre()">Enregistrer</button>
+    </div>
+    <button class="btn btn-danger btn-block" id="meDeleteBtn" style="margin-top:10px;display:none;" onclick="deleteMembre()">Supprimer ce membre</button>
+  </div>
+</div>
+
+<!-- MODAL: Import membres -->
+<div class="overlay" id="overlayImportMembres">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('overlayImportMembres')">✕</button>
+    <h3>Importer des membres</h3>
+    <p style="font-size:.8rem;color:var(--ink-soft);margin-bottom:10px;">Mets <b>un membre par ligne</b>. Pour ajouter ou corriger un numéro, écris : <b>NOM, 76 12 34 56</b> — si le nom existe déjà, son numéro sera mis à jour.</p>
+    <label class="btn btn-outline btn-block" style="margin-bottom:10px;cursor:pointer;">📂 Choisir un fichier .csv
+      <input type="file" accept=".csv,.txt,text/csv,text/plain" onchange="chargerFichierMembres(this)" style="display:none;">
+    </label>
+    <p style="font-size:.72rem;color:var(--ink-soft);margin-bottom:6px;">Ou colle les noms ici :</p>
+    <textarea id="importMembresTexte" rows="6" placeholder="Oumar Traoré&#10;Fatoumata Diallo&#10;Moussa Keïta&#10;..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'IBM Plex Sans',sans-serif;font-size:.88rem;background:var(--white);color:var(--ink);"></textarea>
+    <div id="importMembresMsg" style="font-size:.75rem;color:var(--ink-soft);margin:6px 0;min-height:16px;"></div>
+    <button class="btn btn-primary btn-block" onclick="importerMembres()">Importer ces noms</button>
+  </div>
+</div>
+
+<!-- MODAL: Paiement cotisation -->
+<div class="overlay" id="overlayCotisation">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('overlayCotisation')">✕</button>
+    <h3 id="cotisTitle">Enregistrer un paiement</h3>
+    <input type="hidden" id="coMembreId">
+    <input type="hidden" id="coTrimestre">
+    <div class="field">
+      <label>Montant payé (FCFA)</label>
+      <input type="number" id="coMontant" placeholder="0">
+    </div>
+    <div class="field">
+      <label>Date du paiement</label>
+      <input type="date" id="coDate">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeOverlay('overlayCotisation')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveCotisation()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Export promotion -->
+<div class="overlay" id="overlayExportPromo">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('overlayExportPromo')">✕</button>
+    <h3>Exporter vers Excel</h3>
+    <div class="modal-actions" style="flex-direction:column;">
+      <button class="btn btn-primary btn-block" onclick="closeOverlay('overlayExportPromo');exportImpayesCSV()">⏳ Situation des impayés<br><small style="font-weight:400;">par trimestre et par année</small></button>
+      <button class="btn btn-primary btn-block" onclick="closeOverlay('overlayExportPromo');exportPayesCSV()">✅ Cotisations payées<br><small style="font-weight:400;">par trimestre et par année</small></button>
+      <button class="btn btn-outline btn-block" onclick="closeOverlay('overlayExportPromo');exportPromotionCSV()">📋 Tableau complet</button>
     </div>
   </div>
 </div>
@@ -923,6 +1065,7 @@ main{max-width:640px;margin:0 auto;padding:16px 14px 90px;}
 <script>
 const STORAGE_KEY = 'portefeuille_abdoulaye_v1';
 const DEFAULT_CATS = ['Alimentation','Transport','Logement / Loyer','Santé','Éducation','Fournitures boutique','Achat marchandises','Salaire / Revenu','Remboursement crédit','Crédit reçu','Autre'];
+const PROMO_SEED = {"nom": "Promotion HFC", "montantTrimestre": 10000, "anneeDebut": 2024, "membres": [{"id": "pm001", "nom": "ABDOUBACAR COULIBALY", "tel": "+223 71-67-74-79"}, {"id": "pm002", "nom": "ABDOUL KADRI SANOGO", "tel": ""}, {"id": "pm003", "nom": "ABDOULAYE TRAORE", "tel": "+223 76-26-28-17"}, {"id": "pm004", "nom": "ADAMA BERTHE", "tel": "+223 72-30-55-00"}, {"id": "pm005", "nom": "AFSATOU COULIBALY", "tel": ""}, {"id": "pm006", "nom": "AGNA MAIGA", "tel": "+223 76-43-49-96"}, {"id": "pm007", "nom": "AHADAM SYLLA", "tel": "+223 76-43-38-81"}, {"id": "pm008", "nom": "AISSATA dite MAH NDIAYE", "tel": "+223 76-47-69-42"}, {"id": "pm009", "nom": "ALAMA DJIBRIL S TRAORE", "tel": "+223 76-51-45-31"}, {"id": "pm010", "nom": "ALMAOULOUD MAIGA", "tel": "+223 92-01-83-76"}, {"id": "pm011", "nom": "ASSITAN DIARRA", "tel": "+223 76-42-93-48"}, {"id": "pm012", "nom": "BALLA KANTARA DEMBELE", "tel": "+223 76-11-45-66"}, {"id": "pm013", "nom": "BEIDI GUINDO", "tel": "+223 73-18-90-45"}, {"id": "pm014", "nom": "BINTA DIA", "tel": ""}, {"id": "pm015", "nom": "CHEICH MAGAGUILLE DOUMBIA", "tel": "+223 79-15-3411"}, {"id": "pm016", "nom": "DIAKARIDIA KASSONGUE", "tel": ""}, {"id": "pm017", "nom": "DIOUME COULIBALY", "tel": "+223 76-49-40-20"}, {"id": "pm018", "nom": "DJENEBA SOUKO", "tel": ""}, {"id": "pm019", "nom": "DJIBRIL KONATE", "tel": "+223 78-69-73-88"}, {"id": "pm020", "nom": "FATOUMATA SAMAKE", "tel": ""}, {"id": "pm021", "nom": "FATOUMATA FOUNE TANGARA", "tel": "+223 77-26-45-04"}, {"id": "pm022", "nom": "HAWA SIRE TRAORE", "tel": ""}, {"id": "pm023", "nom": "IDRISSA DIARRA", "tel": "+223 79-02-43-36"}, {"id": "pm024", "nom": "KADIDIATOU DISSA", "tel": ""}, {"id": "pm025", "nom": "KADIDIATOU KONATE", "tel": "+223 71-81-96-78"}, {"id": "pm026", "nom": "KADIATOU DIAKITE", "tel": ""}, {"id": "pm027", "nom": "KINSA SIDIBE", "tel": ""}, {"id": "pm028", "nom": "MADY G KEITA", "tel": "+223 76-16-65-16"}, {"id": "pm029", "nom": "MAHAMADOU MORO", "tel": "+223 76-37-55-46"}, {"id": "pm030", "nom": "MAHAMADOU MAIGA", "tel": ""}, {"id": "pm031", "nom": "MAIMOUNA CISSE", "tel": "+223 76-01-46-36"}, {"id": "pm032", "nom": "MAMADOU DIABY", "tel": "+223 76-26-23-91"}, {"id": "pm033", "nom": "MAMADOU KANE", "tel": ""}, {"id": "pm034", "nom": "MARIAM BERTHE", "tel": ""}, {"id": "pm035", "nom": "MARIAM DAOU", "tel": ""}, {"id": "pm036", "nom": "MME DIALLO FATOUMATA", "tel": ""}, {"id": "pm037", "nom": "MME MAIGA DJEYNEB SARR", "tel": ""}, {"id": "pm038", "nom": "MME SANGHO HADIDIATOU DAGAMAISSA", "tel": ""}, {"id": "pm039", "nom": "MME SISSOKO MARIAM COULIBALY", "tel": ""}, {"id": "pm040", "nom": "MME TOGOLA MARIAM DIAKITE", "tel": ""}, {"id": "pm041", "nom": "MOHAMED MADIMBA DICKO", "tel": ""}, {"id": "pm042", "nom": "MOUSSA SINGARE", "tel": ""}, {"id": "pm043", "nom": "MOUSSA SOW", "tel": ""}, {"id": "pm044", "nom": "NIAGALE DIARRA", "tel": ""}, {"id": "pm045", "nom": "NIANAN ISSA BAGAYOKO", "tel": ""}, {"id": "pm046", "nom": "OUARABADIE KONATE", "tel": ""}, {"id": "pm047", "nom": "OUMAR DAO", "tel": "+223 79-05-48-84"}, {"id": "pm048", "nom": "OUMOU DIAKITE", "tel": ""}, {"id": "pm049", "nom": "PATON NIANGALY", "tel": "+223 75-92-1570"}, {"id": "pm050", "nom": "PINDA KANOUTE", "tel": "+223 75-30-09-14"}, {"id": "pm051", "nom": "ROSALIE NANA", "tel": ""}, {"id": "pm052", "nom": "SELIBA DIAKITE", "tel": ""}, {"id": "pm053", "nom": "SELY BARRY", "tel": ""}, {"id": "pm054", "nom": "SOULEYMANE SOGODOGO", "tel": ""}, {"id": "pm055", "nom": "ZOUMANA DIAWARA", "tel": ""}, {"id": "pm056", "nom": "DR AMADOU ABDOULAYE DIALLO", "tel": ""}, {"id": "pm057", "nom": "JOSEPH KONARE", "tel": ""}], "paiements": [{"id": "pp001", "membreId": "pm001", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp002", "membreId": "pm002", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp003", "membreId": "pm003", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp004", "membreId": "pm003", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp005", "membreId": "pm003", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp006", "membreId": "pm003", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp007", "membreId": "pm003", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp008", "membreId": "pm003", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp009", "membreId": "pm003", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp010", "membreId": "pm003", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp011", "membreId": "pm003", "trimestre": "2026-T1", "montant": 10000, "date": "2026-02-15"}, {"id": "pp012", "membreId": "pm004", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp013", "membreId": "pm004", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp014", "membreId": "pm004", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp015", "membreId": "pm004", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp016", "membreId": "pm005", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp017", "membreId": "pm006", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp018", "membreId": "pm006", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp019", "membreId": "pm006", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp020", "membreId": "pm006", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp021", "membreId": "pm006", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp022", "membreId": "pm006", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp023", "membreId": "pm006", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp024", "membreId": "pm007", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp025", "membreId": "pm007", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp026", "membreId": "pm007", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp027", "membreId": "pm007", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp028", "membreId": "pm007", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp029", "membreId": "pm007", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp030", "membreId": "pm008", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp031", "membreId": "pm008", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp032", "membreId": "pm008", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp033", "membreId": "pm008", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp034", "membreId": "pm009", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp035", "membreId": "pm010", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp036", "membreId": "pm010", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp037", "membreId": "pm010", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp038", "membreId": "pm010", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp039", "membreId": "pm010", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp040", "membreId": "pm010", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp041", "membreId": "pm011", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp042", "membreId": "pm011", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp043", "membreId": "pm011", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp044", "membreId": "pm011", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp045", "membreId": "pm011", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp046", "membreId": "pm011", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp047", "membreId": "pm011", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp048", "membreId": "pm011", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp049", "membreId": "pm011", "trimestre": "2026-T1", "montant": 10000, "date": "2026-02-15"}, {"id": "pp050", "membreId": "pm011", "trimestre": "2026-T2", "montant": 10000, "date": "2026-05-15"}, {"id": "pp051", "membreId": "pm011", "trimestre": "2026-T3", "montant": 10000, "date": "2026-07-07"}, {"id": "pp052", "membreId": "pm011", "trimestre": "2026-T4", "montant": 10000, "date": "2026-07-07"}, {"id": "pp053", "membreId": "pm012", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp054", "membreId": "pm012", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp055", "membreId": "pm012", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp056", "membreId": "pm013", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp057", "membreId": "pm013", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp058", "membreId": "pm013", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp059", "membreId": "pm013", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp060", "membreId": "pm013", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp061", "membreId": "pm013", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp062", "membreId": "pm013", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp063", "membreId": "pm014", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp064", "membreId": "pm014", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp065", "membreId": "pm014", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp066", "membreId": "pm015", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp067", "membreId": "pm015", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp068", "membreId": "pm015", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp069", "membreId": "pm015", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp070", "membreId": "pm016", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp071", "membreId": "pm016", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp072", "membreId": "pm016", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp073", "membreId": "pm017", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp074", "membreId": "pm017", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp075", "membreId": "pm017", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp076", "membreId": "pm017", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp077", "membreId": "pm017", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp078", "membreId": "pm017", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp079", "membreId": "pm017", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp080", "membreId": "pm018", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp081", "membreId": "pm018", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp082", "membreId": "pm018", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp083", "membreId": "pm018", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp084", "membreId": "pm018", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp085", "membreId": "pm018", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp086", "membreId": "pm018", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp087", "membreId": "pm018", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp088", "membreId": "pm018", "trimestre": "2026-T1", "montant": 10000, "date": "2026-02-15"}, {"id": "pp089", "membreId": "pm019", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp090", "membreId": "pm019", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp091", "membreId": "pm019", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp092", "membreId": "pm019", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp093", "membreId": "pm019", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp094", "membreId": "pm019", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp095", "membreId": "pm019", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp096", "membreId": "pm020", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp097", "membreId": "pm021", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp098", "membreId": "pm021", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp099", "membreId": "pm021", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp100", "membreId": "pm021", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp101", "membreId": "pm021", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp102", "membreId": "pm021", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp103", "membreId": "pm022", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp104", "membreId": "pm022", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp105", "membreId": "pm022", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp106", "membreId": "pm023", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp107", "membreId": "pm023", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp108", "membreId": "pm023", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp109", "membreId": "pm023", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp110", "membreId": "pm024", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp111", "membreId": "pm025", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp112", "membreId": "pm025", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp113", "membreId": "pm025", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp114", "membreId": "pm025", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp115", "membreId": "pm026", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp116", "membreId": "pm026", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp117", "membreId": "pm026", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp118", "membreId": "pm027", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp119", "membreId": "pm028", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp120", "membreId": "pm028", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp121", "membreId": "pm028", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp122", "membreId": "pm028", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp123", "membreId": "pm028", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp124", "membreId": "pm028", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp125", "membreId": "pm028", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp126", "membreId": "pm028", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp127", "membreId": "pm029", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp128", "membreId": "pm029", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp129", "membreId": "pm029", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp130", "membreId": "pm029", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp131", "membreId": "pm029", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp132", "membreId": "pm030", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp133", "membreId": "pm030", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp134", "membreId": "pm030", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp135", "membreId": "pm030", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp136", "membreId": "pm031", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp137", "membreId": "pm031", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp138", "membreId": "pm031", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp139", "membreId": "pm031", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp140", "membreId": "pm031", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp141", "membreId": "pm031", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp142", "membreId": "pm031", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp143", "membreId": "pm032", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp144", "membreId": "pm032", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp145", "membreId": "pm032", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp146", "membreId": "pm032", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp147", "membreId": "pm032", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp148", "membreId": "pm032", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp149", "membreId": "pm032", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp150", "membreId": "pm032", "trimestre": "2026-T1", "montant": 10000, "date": "2026-02-15"}, {"id": "pp151", "membreId": "pm032", "trimestre": "2026-T2", "montant": 10000, "date": "2026-05-15"}, {"id": "pp152", "membreId": "pm033", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp153", "membreId": "pm033", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp154", "membreId": "pm033", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp155", "membreId": "pm034", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp156", "membreId": "pm035", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp157", "membreId": "pm035", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp158", "membreId": "pm035", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp159", "membreId": "pm036", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp160", "membreId": "pm036", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp161", "membreId": "pm037", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp162", "membreId": "pm037", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp163", "membreId": "pm037", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp164", "membreId": "pm037", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp165", "membreId": "pm037", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp166", "membreId": "pm037", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp167", "membreId": "pm037", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp168", "membreId": "pm037", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp169", "membreId": "pm038", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp170", "membreId": "pm038", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp171", "membreId": "pm038", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp172", "membreId": "pm038", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp173", "membreId": "pm038", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp174", "membreId": "pm038", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp175", "membreId": "pm038", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp176", "membreId": "pm039", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp177", "membreId": "pm040", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp178", "membreId": "pm040", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp179", "membreId": "pm040", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp180", "membreId": "pm040", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp181", "membreId": "pm041", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp182", "membreId": "pm041", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp183", "membreId": "pm041", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp184", "membreId": "pm041", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp185", "membreId": "pm041", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp186", "membreId": "pm041", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp187", "membreId": "pm041", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp188", "membreId": "pm041", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp189", "membreId": "pm042", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp190", "membreId": "pm042", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp191", "membreId": "pm042", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp192", "membreId": "pm042", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp193", "membreId": "pm042", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp194", "membreId": "pm042", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp195", "membreId": "pm043", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp196", "membreId": "pm043", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp197", "membreId": "pm044", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp198", "membreId": "pm045", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp199", "membreId": "pm046", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp200", "membreId": "pm046", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp201", "membreId": "pm047", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp202", "membreId": "pm047", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp203", "membreId": "pm047", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp204", "membreId": "pm047", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp205", "membreId": "pm048", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp206", "membreId": "pm048", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp207", "membreId": "pm048", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp208", "membreId": "pm048", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp209", "membreId": "pm049", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp210", "membreId": "pm049", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp211", "membreId": "pm049", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp212", "membreId": "pm049", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp213", "membreId": "pm050", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp214", "membreId": "pm050", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp215", "membreId": "pm050", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp216", "membreId": "pm050", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp217", "membreId": "pm051", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp218", "membreId": "pm051", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp219", "membreId": "pm051", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp220", "membreId": "pm051", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp221", "membreId": "pm051", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp222", "membreId": "pm051", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp223", "membreId": "pm052", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp224", "membreId": "pm053", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp225", "membreId": "pm053", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp226", "membreId": "pm053", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp227", "membreId": "pm053", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}, {"id": "pp228", "membreId": "pm053", "trimestre": "2025-T1", "montant": 10000, "date": "2025-02-15"}, {"id": "pp229", "membreId": "pm053", "trimestre": "2025-T2", "montant": 10000, "date": "2025-05-15"}, {"id": "pp230", "membreId": "pm053", "trimestre": "2025-T3", "montant": 10000, "date": "2025-08-15"}, {"id": "pp231", "membreId": "pm053", "trimestre": "2025-T4", "montant": 10000, "date": "2025-11-15"}, {"id": "pp232", "membreId": "pm053", "trimestre": "2026-T1", "montant": 10000, "date": "2026-02-15"}, {"id": "pp233", "membreId": "pm054", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp234", "membreId": "pm054", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp235", "membreId": "pm054", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp236", "membreId": "pm055", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp237", "membreId": "pm055", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp238", "membreId": "pm055", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp239", "membreId": "pm056", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp240", "membreId": "pm056", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp241", "membreId": "pm056", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp242", "membreId": "pm057", "trimestre": "2024-T1", "montant": 10000, "date": "2024-02-15"}, {"id": "pp243", "membreId": "pm057", "trimestre": "2024-T2", "montant": 10000, "date": "2024-05-15"}, {"id": "pp244", "membreId": "pm057", "trimestre": "2024-T3", "montant": 10000, "date": "2024-08-15"}, {"id": "pp245", "membreId": "pm057", "trimestre": "2024-T4", "montant": 10000, "date": "2024-11-15"}]};
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function todayStr(){return new Date().toISOString().slice(0,10);}
@@ -947,6 +1090,7 @@ function loadData(){
     depensesFixes:[],
     agendaItems:[],
     enfantsProgramme:[],
+    promotion:{ nom:'Promotion 2024', montantTrimestre:0, anneeDebut:2024, membres:[], paiements:[] },
     security:{passwordHash:null}
   };
 }
@@ -955,6 +1099,11 @@ if(!DATA.security) DATA.security = {passwordHash:null};
 if(!DATA.depensesFixes) DATA.depensesFixes = [];
 if(!DATA.agendaItems) DATA.agendaItems = [];
 if(!DATA.enfantsProgramme) DATA.enfantsProgramme = [];
+if(!DATA.promoSeedV1){
+  if(!DATA.promotion || !(DATA.promotion.membres||[]).length){ DATA.promotion = JSON.parse(JSON.stringify(PROMO_SEED)); }
+  DATA.promoSeedV1 = true;
+}
+if(!DATA.promotion) DATA.promotion = { nom:'Promotion HFC', montantTrimestre:10000, anneeDebut:2024, membres:[], paiements:[] };
 DATA.depensesFixes.forEach(f=>{ if(!f.frequence) f.frequence='mensuel'; if(!f.paiements) f.paiements={}; });
 ['Abonnement / Facture'].forEach(c=>{ if(!DATA.categories.includes(c)) DATA.categories.push(c); });
 function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); renderAll(); }
@@ -1485,6 +1634,7 @@ function renderDepenses(){
 ['filtCompte','filtCategorie','filtRecherche'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderDepenses);
 });
+document.getElementById('promoRecherche').addEventListener('input', renderPromotion);
 
 function exportCSV(){
   let rows = [['Date','Type','Compte','Catégorie','Description','Montant']];
@@ -1505,13 +1655,7 @@ function exportCSV(){
     const remb = p.historique.reduce((s,h)=>s+h.montant,0);
     rows.push([p.nom, p.type, p.montant, remb, personneRestant(p), p.description, p.date]);
   });
-  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'portefeuille_export_'+todayStr()+'.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  telechargerCSV(rows, 'portefeuille_export_'+todayStr()+'.csv');
 }
 
 function renderAll(){
@@ -1522,6 +1666,7 @@ function renderAll(){
   renderDepensesFilters();
   renderDepenses();
   if(typeof renderFixes==='function') renderFixes();
+  if(typeof renderPromotion==='function') renderPromotion();
   if(typeof renderAgenda==='function') renderAgenda();
   if(typeof renderEnfants==='function') renderEnfants();
   if(typeof renderDashboardRappels==='function') renderDashboardRappels();
@@ -1899,7 +2044,7 @@ function telechargerSauvegarde(){
   const a = document.createElement('a');
   a.href = url; a.download = 'sauvegarde_portefeuille_'+todayStr()+'.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
   document.getElementById('sauvMsg').textContent='Choisis « Enregistrer dans Fichiers » pour le garder.';
 }
 function chargerFichier(input){
@@ -1966,6 +2111,7 @@ function restaurerSauvegarde(){
   if(!DATA.depensesFixes) DATA.depensesFixes = [];
   if(!DATA.agendaItems) DATA.agendaItems = [];
   if(!DATA.enfantsProgramme) DATA.enfantsProgramme = [];
+  if(!DATA.promotion) DATA.promotion = { nom:'Promotion 2024', montantTrimestre:0, anneeDebut:2024, membres:[], paiements:[] };
   DATA.depensesFixes.forEach(f=>{ if(!f.frequence) f.frequence='mensuel'; if(!f.paiements) f.paiements={}; });
   unlockedThisSession = true;
   msg.style.color='var(--teal)';
@@ -2022,7 +2168,7 @@ function ajouterAuCalendrier(titre, notes, dateStr, heureStr, rrule){
   const a = document.createElement('a');
   a.href = url; a.download = 'rappel_'+dateStr+'.ics';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
 }
 // Prochaine date où tombe un jour donné du mois (ce mois si pas passé, sinon le mois suivant)
 function prochaineDateJour(jour){
@@ -2326,6 +2472,481 @@ function renderDashboardRappels(){
   const auj = (DATA.agendaItems||[]).some(it=>!it.fait && it.date===ymd) || (DATA.enfantsProgramme||[]).some(it=>!it.fait && it.date===ymd);
   const tabBtn = document.querySelector('nav.tabs button[data-tab="agenda"]');
   if(tabBtn){ tabBtn.innerHTML = 'Agenda' + (auj ? '<span class="tab-dot"></span>' : ''); }
+}
+
+// ---------- PROMOTION : cotisations trimestrielles ----------
+function promo(){ return DATA.promotion; }
+function trimestreDeDate(dateStr){ const m=parseInt(dateStr.slice(5,7),10); return dateStr.slice(0,4)+'-T'+Math.ceil(m/3); }
+function trimestreActuel(){ return trimestreDeDate(todayStr()); }
+function listeTrimestres(){
+  const res=[]; const now=new Date();
+  const yNow=now.getFullYear(); const tNow=Math.ceil((now.getMonth()+1)/3);
+  const debut = promo().anneeDebut || 2024;
+  for(let y=debut; y<=yNow; y++){
+    for(let t=1;t<=4;t++){ res.push(y+'-T'+t); } // 4 trimestres/année (paiements d'avance possibles)
+  }
+  return res.reverse(); // le plus récent en premier
+}
+function trimestreLabel(key){
+  const [y,t]=key.split('-T');
+  const noms={ '1':'1ᵉʳ trimestre', '2':'2ᵉ trimestre', '3':'3ᵉ trimestre', '4':'4ᵉ trimestre' };
+  return (noms[t]||('T'+t))+' '+y;
+}
+function paiementMembre(membreId, trimestre){
+  return promo().paiements.find(p=>p.membreId===membreId && p.trimestre===trimestre);
+}
+
+function openPromoReglages(){
+  document.getElementById('prNom').value = promo().nom;
+  document.getElementById('prMontant').value = promo().montantTrimestre || '';
+  const sel = document.getElementById('prAnnee');
+  sel.innerHTML='';
+  const yNow = new Date().getFullYear();
+  for(let y=2015; y<=yNow; y++){ const o=document.createElement('option'); o.value=y; o.textContent=y; sel.appendChild(o); }
+  sel.value = promo().anneeDebut || 2024;
+  openOverlay('overlayPromoReglages');
+}
+function savePromoReglages(){
+  const nom = document.getElementById('prNom').value.trim() || 'Promotion';
+  const montant = parseFloat(document.getElementById('prMontant').value)||0;
+  const annee = parseInt(document.getElementById('prAnnee').value,10);
+  promo().nom = nom;
+  promo().montantTrimestre = montant;
+  promo().anneeDebut = annee;
+  closeOverlay('overlayPromoReglages');
+  save();
+}
+
+function openMembreForm(editId, focusTel){
+  document.getElementById('meEditId').value = editId||'';
+  document.getElementById('membreTitle').textContent = editId ? 'Modifier le membre' : 'Nouveau membre';
+  document.getElementById('meDeleteBtn').style.display = editId ? 'block' : 'none';
+  const m = editId ? (promo().membres.find(x=>x.id===editId)||{}) : {};
+  document.getElementById('meNom').value = m.nom||'';
+  document.getElementById('meTel').value = m.tel||'';
+  openOverlay('overlayMembre');
+  if(focusTel){ setTimeout(()=>{ const el=document.getElementById('meTel'); if(el) el.focus(); }, 300); }
+}
+function saveMembre(){
+  const editId = document.getElementById('meEditId').value;
+  const nom = document.getElementById('meNom').value.trim();
+  const tel = document.getElementById('meTel').value.trim();
+  if(!nom){ alert('Indique un nom.'); return; }
+  if(editId){
+    const m = promo().membres.find(x=>x.id===editId); m.nom = nom; m.tel = tel;
+  } else {
+    promo().membres.push({id:uid(), nom, tel});
+  }
+  closeOverlay('overlayMembre');
+  save();
+}
+function deleteMembre(){
+  const id = document.getElementById('meEditId').value;
+  if(!id) return;
+  if(!confirm('Supprimer ce membre et tous ses paiements ?')) return;
+  promo().membres = promo().membres.filter(m=>m.id!==id);
+  promo().paiements = promo().paiements.filter(p=>p.membreId!==id);
+  closeOverlay('overlayMembre');
+  save();
+}
+
+function openImportMembres(){
+  document.getElementById('importMembresTexte').value='';
+  document.getElementById('importMembresMsg').textContent='';
+  openOverlay('overlayImportMembres');
+}
+function chargerFichierMembres(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    document.getElementById('importMembresTexte').value = e.target.result;
+    document.getElementById('importMembresMsg').textContent = '✓ Fichier chargé — appuie sur « Importer ».';
+  };
+  reader.onerror = ()=>{ document.getElementById('importMembresMsg').textContent='Impossible de lire ce fichier.'; };
+  reader.readAsText(file);
+  input.value='';
+}
+function parseNoms(texte){
+  return texte.split(/[\r\n]+/).map(l=>l.trim()).filter(l=>l.length>0).map(l=>{
+    const parts = l.split(/[;,\t]/).map(s=>s.trim()).filter(Boolean);
+    const nom = parts[0]||'';
+    let tel = '';
+    for(let i=1;i<parts.length;i++){
+      const d = parts[i].replace(/[^0-9]/g,'');
+      if(d.length>=8){ tel = parts[i]; break; }
+    }
+    return {nom, tel};
+  }).filter(o=>o.nom && o.nom.toLowerCase()!=='nom' && o.nom.toLowerCase()!=='name');
+}
+function importerMembres(){
+  const txt = document.getElementById('importMembresTexte').value;
+  const entrees = parseNoms(txt);
+  if(entrees.length===0){ document.getElementById('importMembresMsg').textContent='Aucun nom trouvé.'; return; }
+  let ajoutes = 0, maj = 0;
+  entrees.forEach(e=>{
+    const exist = promo().membres.find(m=>m.nom.toLowerCase()===e.nom.toLowerCase());
+    if(exist){
+      if(e.tel){ exist.tel = e.tel; maj++; }
+    } else {
+      promo().membres.push({id:uid(), nom:e.nom, tel:e.tel||''});
+      ajoutes++;
+    }
+  });
+  closeOverlay('overlayImportMembres');
+  save();
+  alert(ajoutes+' membre(s) ajouté(s), '+maj+' numéro(s) mis à jour.');
+}
+
+function openCotisation(membreId, trimestre){
+  const m = promo().membres.find(x=>x.id===membreId);
+  const existant = paiementMembre(membreId, trimestre);
+  document.getElementById('coMembreId').value = membreId;
+  document.getElementById('coTrimestre').value = trimestre;
+  document.getElementById('cotisTitle').textContent = (existant?'Modifier — ':'Paiement — ')+m.nom;
+  document.getElementById('coMontant').value = existant ? existant.montant : (promo().montantTrimestre||'');
+  document.getElementById('coDate').value = existant ? existant.date : todayStr();
+  openOverlay('overlayCotisation');
+}
+function saveCotisation(){
+  const membreId = document.getElementById('coMembreId').value;
+  const trimestre = document.getElementById('coTrimestre').value;
+  const montant = parseFloat(document.getElementById('coMontant').value);
+  const date = document.getElementById('coDate').value || todayStr();
+  if(!montant || montant<=0){ alert('Indique un montant valide.'); return; }
+  let p = paiementMembre(membreId, trimestre);
+  if(p){ p.montant=montant; p.date=date; }
+  else { promo().paiements.push({id:uid(), membreId, trimestre, montant, date}); }
+  closeOverlay('overlayCotisation');
+  save();
+}
+function annulerCotisation(membreId, trimestre){
+  if(!confirm('Annuler ce paiement ?')) return;
+  promo().paiements = promo().paiements.filter(p=>!(p.membreId===membreId && p.trimestre===trimestre));
+  save();
+}
+
+// ---------- WHATSAPP ----------
+function normTel(t){
+  let d = (t||'').replace(/[^0-9]/g,'');
+  if(d.length===8) d = '223'+d; // numéro malien sans indicatif
+  return d;
+}
+function ouvrirWhatsapp(texte, tel){
+  const enc = encodeURIComponent(texte);
+  const surMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  // Sur téléphone : protocole direct de l'app (garde le numéro + le message jusqu'à la conversation)
+  // Sur ordinateur : lien web wa.me
+  const url = surMobile
+    ? 'whatsapp://send?' + (tel ? 'phone='+tel+'&' : '') + 'text=' + enc
+    : 'https://wa.me/' + (tel||'') + '?text=' + enc;
+  const a = document.createElement('a');
+  a.href = url;
+  if(!surMobile){ a.target = '_blank'; a.rel = 'noopener'; }
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+// Garantit un numéro : s'il manque, on le demande et on l'enregistre — le lien cible toujours le numéro
+function telPourEnvoi(m){
+  let tel = normTel(m.tel);
+  if(tel) return tel;
+  const saisie = prompt('Numéro WhatsApp de '+m.nom+'\n8 chiffres (ex : 76 12 34 56) — le +223 est ajouté automatiquement.');
+  if(saisie===null || saisie.trim()==='') return null;
+  const digits = saisie.replace(/[^0-9]/g,'');
+  if(digits.length<8){ alert('Numéro incomplet : il faut 8 chiffres au minimum.'); return null; }
+  m.tel = (digits.length===8) ? ('+223 '+digits.replace(/(..)(..)(..)(..)/,'$1 $2 $3 $4')) : ('+'+digits);
+  save();
+  return normTel(m.tel);
+}
+function rappelWhatsappMembre(membreId, trimestre){
+  const m = promo().membres.find(x=>x.id===membreId);
+  if(!m) return;
+  const tel = telPourEnvoi(m);
+  if(!tel) return;
+  const montant = promo().montantTrimestre ? fmt(promo().montantTrimestre)+' FCFA' : 'la cotisation';
+  const texte = 'Bonjour '+m.nom+' 🙏\n'
+    + 'Petit rappel pour la cotisation de '+promo().nom+' — '+trimestreLabel(trimestre)+' : '+montant+'.\n'
+    + 'Merci de te mettre à jour quand tu peux. Bonne journée !';
+  ouvrirWhatsapp(texte, tel);
+}
+function partagerPointWhatsapp(){
+  const trimestre = document.getElementById('promoTrimestreSel').value || trimestreActuel();
+  const membres = [...promo().membres].sort((a,b)=>a.nom.localeCompare(b.nom));
+  if(membres.length===0){ alert('Ajoute d\'abord des membres.'); return; }
+  const payes = membres.filter(m=>paiementMembre(m.id, trimestre));
+  const pas = membres.filter(m=>!paiementMembre(m.id, trimestre));
+  const collecte = promo().paiements.filter(p=>p.trimestre===trimestre).reduce((s,p)=>s+p.montant,0);
+  let texte = '*'+promo().nom+' — '+trimestreLabel(trimestre)+'*\n';
+  texte += 'Collecté : '+fmt(collecte)+' FCFA\n\n';
+  texte += '✅ Ont payé ('+payes.length+'/'+membres.length+') :\n';
+  texte += (payes.length ? payes.map(m=>'• '+m.nom).join('\n') : '—');
+  texte += '\n\n⏳ En attente ('+pas.length+') :\n';
+  texte += (pas.length ? pas.map(m=>'• '+m.nom).join('\n') : '—');
+  if(promo().montantTrimestre) texte += '\n\nCotisation : '+fmt(promo().montantTrimestre)+' FCFA / trimestre';
+  texte += '\nMerci à tous 🙏';
+  ouvrirWhatsapp(texte, '');
+}
+
+// ---------- SITUATION INDIVIDUELLE ----------
+// Trimestres dus : du début de la promotion jusqu'au trimestre actuel inclus
+function trimestresDus(){
+  const res=[]; const now=new Date();
+  const yNow=now.getFullYear(); const tNow=Math.ceil((now.getMonth()+1)/3);
+  const debut = promo().anneeDebut || 2024;
+  for(let y=debut; y<=yNow; y++){
+    const tMax=(y===yNow)?tNow:4;
+    for(let t=1;t<=tMax;t++) res.push(y+'-T'+t);
+  }
+  return res;
+}
+function situationMembre(membreId){
+  const dus = trimestresDus();
+  const paies = promo().paiements.filter(p=>p.membreId===membreId);
+  const totalPaye = paies.reduce((s,p)=>s+p.montant,0);
+  const manquants = dus.filter(t=>!paies.some(p=>p.trimestre===t));
+  const reste = manquants.length * (promo().montantTrimestre||0);
+  return {totalPaye, manquants, reste};
+}
+function situationMembreTexte(membreId){
+  const m = promo().membres.find(x=>x.id===membreId);
+  const s = situationMembre(membreId);
+  const debut = promo().anneeDebut || 2024;
+  const now = new Date(); const yNow = now.getFullYear(); const tNow = Math.ceil((now.getMonth()+1)/3);
+  let txt = '*Situation cotisations — '+promo().nom+'*\n';
+  txt += 'Membre : '+m.nom+'\n\n';
+  for(let y=debut; y<=yNow; y++){
+    const tMax = (y===yNow)? tNow : 4;
+    let ligne = y+' : ';
+    let anneePaye = 0;
+    for(let t=1;t<=4;t++){
+      const key = y+'-T'+t;
+      const p = promo().paiements.find(pp=>pp.membreId===membreId && pp.trimestre===key);
+      if(t<=tMax){
+        ligne += 'T'+t+(p?'✅':'❌')+'  ';
+        if(p) anneePaye += p.montant;
+      } else if(p){
+        ligne += 'T'+t+'✅(avance)  ';
+        anneePaye += p.montant;
+      }
+    }
+    txt += ligne+'→ '+fmt(anneePaye)+' F\n';
+  }
+  txt += '\nTotal payé : '+fmt(s.totalPaye)+' F';
+  txt += '\nReste à payer : '+fmt(s.reste)+' F';
+  txt += s.reste>0 ? '\n\nMerci de te mettre à jour quand tu peux 🙏' : '\n\n✅ Tu es à jour, merci beaucoup !';
+  return txt;
+}
+function envoyerSituationMembre(membreId){
+  const m = promo().membres.find(x=>x.id===membreId);
+  if(!m) return;
+  const tel = telPourEnvoi(m);
+  if(!tel) return;
+  ouvrirWhatsapp(situationMembreTexte(membreId), tel);
+}
+
+function prochainDebutTrimestre(){
+  const now=new Date(); let y=now.getFullYear(); const t=Math.ceil((now.getMonth()+1)/3);
+  let nt=t+1, ny=y; if(nt>4){ nt=1; ny++; }
+  const startMonth=(nt-1)*3+1;
+  return ny+'-'+pad2(startMonth)+'-01';
+}
+function rappelTrimestrielCalendrier(){
+  const date = prochainDebutTrimestre();
+  ajouterAuCalendrier('Cotisation '+promo().nom, 'Rappel de cotisation trimestrielle', date, '09:00', 'FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1');
+}
+
+function telechargerCSVdirect(blob, nomFichier){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomFichier;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  // libération différée : la libérer tout de suite peut annuler le téléchargement sur iPhone
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+}
+function telechargerCSV(rows, nomFichier){
+  try{
+    // point-virgule : séparateur attendu par Excel en français (sinon tout va dans une colonne)
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const surMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if(surMobile && navigator.canShare && typeof File!=='undefined'){
+      try{
+        const fichier = new File([blob], nomFichier, {type:'text/csv'});
+        if(navigator.canShare({files:[fichier]})){
+          navigator.share({files:[fichier], title:nomFichier}).catch(function(err){
+            if(err && err.name==='AbortError') return; // l'utilisateur a annulé, c'est normal
+            telechargerCSVdirect(blob, nomFichier); // plan B : téléchargement direct
+          });
+          return;
+        }
+      }catch(e){ /* on passe au téléchargement direct */ }
+    }
+    telechargerCSVdirect(blob, nomFichier);
+  }catch(e){
+    alert('Erreur export : '+e.message+'\nEnvoie ce message à ton assistant pour correction.');
+  }
+}
+function anneesPromo(){
+  const debut = promo().anneeDebut||2024;
+  const yNow = new Date().getFullYear();
+  const res=[]; for(let y=debut;y<=yNow;y++) res.push(y);
+  return res;
+}
+// Export : situation des impayés (trimestres échus seulement)
+function exportImpayesCSV(){
+  const dus = trimestresDus();
+  const annees = anneesPromo();
+  const montant = promo().montantTrimestre||0;
+  const entete = ['Nom'];
+  annees.forEach(y=>{
+    dus.filter(t=>t.startsWith(y+'-')).forEach(t=>entete.push(t.replace('-T',' T')));
+    entete.push('Impayé '+y);
+  });
+  entete.push('TOTAL IMPAYÉ');
+  const rows = [[promo().nom+' — Situation des impayés au '+todayStr()], [], entete];
+  const membres = [...promo().membres].sort((a,b)=>a.nom.localeCompare(b.nom));
+  const totQ={}, nbQ={}, totY={}; let totG=0;
+  membres.forEach(m=>{
+    const paies = promo().paiements.filter(p=>p.membreId===m.id);
+    const row=[m.nom]; let rowTot=0;
+    annees.forEach(y=>{
+      let yTot=0;
+      dus.filter(t=>t.startsWith(y+'-')).forEach(t=>{
+        if(paies.some(p=>p.trimestre===t)){ row.push(''); }
+        else { row.push(montant); yTot+=montant; totQ[t]=(totQ[t]||0)+montant; nbQ[t]=(nbQ[t]||0)+1; }
+      });
+      row.push(yTot); totY[y]=(totY[y]||0)+yTot; rowTot+=yTot;
+    });
+    row.push(rowTot); totG+=rowTot;
+    if(rowTot>0) rows.push(row); // seulement ceux qui doivent
+  });
+  const ligneTot=['TOTAL (F)'], ligneNb=['NOMBRE EN RETARD'];
+  annees.forEach(y=>{
+    dus.filter(t=>t.startsWith(y+'-')).forEach(t=>{ ligneTot.push(totQ[t]||0); ligneNb.push(nbQ[t]||0); });
+    ligneTot.push(totY[y]||0); ligneNb.push('');
+  });
+  ligneTot.push(totG); ligneNb.push('');
+  rows.push(ligneTot); rows.push(ligneNb);
+  telechargerCSV(rows, 'impayes_promotion_'+todayStr()+'.csv');
+}
+// Export : cotisations payées (avec paiements d'avance)
+function exportPayesCSV(){
+  const annees = anneesPromo();
+  const entete=['Nom'];
+  annees.forEach(y=>{ for(let t=1;t<=4;t++) entete.push(y+' T'+t); entete.push('Payé '+y); });
+  entete.push('TOTAL PAYÉ');
+  const rows=[[promo().nom+' — Cotisations payées au '+todayStr()],[],entete];
+  const membres=[...promo().membres].sort((a,b)=>a.nom.localeCompare(b.nom));
+  const totQ={}, nbQ={}, totY={}; let totG=0;
+  membres.forEach(m=>{
+    const paies=promo().paiements.filter(p=>p.membreId===m.id);
+    const row=[m.nom]; let rowTot=0;
+    annees.forEach(y=>{
+      let yTot=0;
+      for(let t=1;t<=4;t++){
+        const key=y+'-T'+t;
+        const p=paies.find(pp=>pp.trimestre===key);
+        if(p){ row.push(p.montant); yTot+=p.montant; totQ[key]=(totQ[key]||0)+p.montant; nbQ[key]=(nbQ[key]||0)+1; }
+        else row.push('');
+      }
+      row.push(yTot); totY[y]=(totY[y]||0)+yTot; rowTot+=yTot;
+    });
+    row.push(rowTot); totG+=rowTot;
+    rows.push(row);
+  });
+  const ligneTot=['TOTAL (F)'], ligneNb=['NOMBRE DE PAYEURS'];
+  annees.forEach(y=>{
+    for(let t=1;t<=4;t++){ const key=y+'-T'+t; ligneTot.push(totQ[key]||0); ligneNb.push(nbQ[key]||0); }
+    ligneTot.push(totY[y]||0); ligneNb.push('');
+  });
+  ligneTot.push(totG); ligneNb.push('');
+  rows.push(ligneTot); rows.push(ligneNb);
+  telechargerCSV(rows, 'cotisations_payees_'+todayStr()+'.csv');
+}
+
+function exportPromotionCSV(){
+  const trimestres = listeTrimestres().slice().reverse(); // chronologique
+  const entete = ['Nom', ...trimestres.map(trimestreLabel), 'Total payé'];
+  const rows = [entete];
+  promo().membres.forEach(m=>{
+    let total=0;
+    const cells = trimestres.map(t=>{ const p=paiementMembre(m.id,t); if(p){ total+=p.montant; return p.montant; } return ''; });
+    rows.push([m.nom, ...cells, total]);
+  });
+  // ligne des totaux
+  const totauxCol = trimestres.map(t=> promo().paiements.filter(p=>p.trimestre===t).reduce((s,p)=>s+p.montant,0));
+  const totalGeneral = promo().paiements.reduce((s,p)=>s+p.montant,0);
+  rows.push(['TOTAL', ...totauxCol, totalGeneral]);
+  telechargerCSV(rows, 'cotisations_promotion_'+todayStr()+'.csv');
+}
+
+function renderPromotion(){
+  document.getElementById('promoNom').textContent = promo().nom;
+  document.getElementById('promoSousTitre').textContent = 'Trimestriel · '+promo().membres.length+' membre(s)'+(promo().montantTrimestre?(' · '+fmt(promo().montantTrimestre)+' F/trim.'):'');
+
+  // remplir le sélecteur de trimestres
+  const sel = document.getElementById('promoTrimestreSel');
+  const trimestres = listeTrimestres();
+  const ancienneVal = sel.value;
+  sel.innerHTML = trimestres.map(t=>`<option value="${t}">${trimestreLabel(t)}${t===trimestreActuel()?' (en cours)':(t>trimestreActuel()?' (à venir)':'')}</option>`).join('');
+  if(ancienneVal && trimestres.includes(ancienneVal)) sel.value = ancienneVal;
+  else sel.value = trimestreActuel();
+  const trimestre = sel.value;
+
+  const membres = promo().membres;
+  const nbPaye = membres.filter(m=>paiementMembre(m.id, trimestre)).length;
+  const collecte = promo().paiements.filter(p=>p.trimestre===trimestre).reduce((s,p)=>s+p.montant,0);
+  document.getElementById('promoCollecte').textContent = fmt(collecte)+' FCFA';
+  document.getElementById('promoNbPaye').textContent = nbPaye+' / '+membres.length;
+  document.getElementById('promoNbReste').textContent = (membres.length-nbPaye);
+
+  const list = document.getElementById('promoMembresList');
+  const empty = document.getElementById('promoEmpty');
+  if(membres.length===0){ list.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+
+  const q = (document.getElementById('promoRecherche').value||'').toLowerCase().trim();
+  let sorted = [...membres].sort((a,b)=>a.nom.localeCompare(b.nom));
+  if(q) sorted = sorted.filter(m=> m.nom.toLowerCase().includes(q) || (m.tel||'').replace(/[^0-9]/g,'').includes(q.replace(/[^0-9]/g,'')||'###'));
+  if(sorted.length===0){ list.innerHTML = '<div class="empty">Aucun membre trouvé pour « '+q+' ».</div>'; return; }
+  list.innerHTML = sorted.map(m=>{
+    const p = paiementMembre(m.id, trimestre);
+    const paye = !!p;
+    const auj = p && p.date===todayStr();
+    const sit = situationMembre(m.id);
+    const badge = paye
+      ? `<span class="badge-status paye">Payé${auj?" · aujourd'hui":''}</span>`
+      : `<span class="badge-status retard">Pas payé</span>`;
+    const detail = paye ? `<div class="when">${fmt(p.montant)} F · ${p.date}</div>` : '';
+    const situLigne = sit.reste>0
+      ? `<div class="when" style="color:var(--rust);font-weight:600;">Doit ${fmt(sit.reste)} F au total (${sit.manquants.length} trim.)</div>`
+      : `<div class="when" style="color:var(--teal);font-weight:600;">✓ À jour sur tout</div>`;
+    const telHtml = m.tel ? '' : `<div class="when">☎️ numéro WhatsApp manquant</div>`;
+    const telBtn = m.tel ? '' : `<button class="btn btn-ochre btn-sm" onclick="openMembreForm('${m.id}', true)">☎️ Ajouter n°</button>`;
+    const btn = paye
+      ? `<button class="btn btn-outline btn-sm" onclick="openCotisation('${m.id}','${trimestre}')">Modifier</button>
+         <button class="btn btn-outline btn-sm" onclick="annulerCotisation('${m.id}','${trimestre}')">Annuler</button>`
+      : `<button class="btn btn-ochre btn-sm" onclick="openCotisation('${m.id}','${trimestre}')">✓ Marquer payé</button>
+         <button class="btn btn-outline btn-sm" onclick="rappelWhatsappMembre('${m.id}','${trimestre}')">📱 Rappeler</button>`;
+    return `<div class="agenda-item">
+      <div class="top">
+        <div>
+          <div class="titre">${m.nom}</div>
+          ${detail}
+          ${situLigne}
+          ${telHtml}
+        </div>
+        ${badge}
+      </div>
+      <div class="actions">
+        ${btn}
+        <button class="btn btn-outline btn-sm" onclick="envoyerSituationMembre('${m.id}')">📄 Situation</button>
+        ${telBtn}
+        <button class="btn btn-outline btn-sm" onclick="openMembreForm('${m.id}')">✎ Fiche</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 checkLock();
