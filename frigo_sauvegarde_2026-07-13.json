@@ -1,0 +1,729 @@
+{
+  "categories": [
+    {
+      "id": "grand",
+      "nom": "Grand Canette",
+      "prix": 500,
+      "couleur": "#5EEAD4",
+      "seuil": 15
+    },
+    {
+      "id": "petit",
+      "nom": "Petit Canette",
+      "prix": 300,
+      "couleur": "#60A5FA",
+      "seuil": 15
+    },
+    {
+      "id": "iragrand",
+      "nom": "IRA Grand",
+      "prix": 600,
+      "couleur": "#A78BFA",
+      "seuil": 15
+    },
+    {
+      "id": "irapetit",
+      "nom": "IRA Petit",
+      "prix": 350,
+      "couleur": "#C4B5FD",
+      "seuil": 15
+    },
+    {
+      "id": "bramali",
+      "nom": "Bramali",
+      "prix": 200,
+      "couleur": "#FBBF24",
+      "seuil": 15
+    },
+    {
+      "id": "paps",
+      "nom": "Pap's Soda",
+      "prix": 200,
+      "couleur": "#FB923C",
+      "seuil": 15
+    },
+    {
+      "id": "juspp",
+      "nom": "Jus PP",
+      "prix": 200,
+      "couleur": "#F472B6",
+      "seuil": 15
+    },
+    {
+      "id": "diago",
+      "nom": "Diago",
+      "prix": 400,
+      "couleur": "#34D399",
+      "seuil": 15
+    },
+    {
+      "id": "perfect",
+      "nom": "Perfect",
+      "prix": 150,
+      "couleur": "#FACC15",
+      "seuil": 15
+    }
+  ],
+  "produits": [
+    {
+      "id": "prod_mr3see1ago26",
+      "nom": "PRESIA",
+      "categorieId": "petit"
+    },
+    {
+      "id": "prod_mr3see1ae89f",
+      "nom": "ORIGINAL",
+      "categorieId": "petit"
+    },
+    {
+      "id": "prod_mr3see1atxs2",
+      "nom": "EAU DIAGO",
+      "categorieId": "diago"
+    },
+    {
+      "id": "prod_mr3see1bvcf8",
+      "nom": "VANDAM",
+      "categorieId": "grand"
+    },
+    {
+      "id": "prod_mr3see1br5h8",
+      "nom": "COCA",
+      "categorieId": "grand"
+    },
+    {
+      "id": "prod_mr3see1b0vnr",
+      "nom": "ACHOURA",
+      "categorieId": "grand"
+    },
+    {
+      "id": "prod_mr3see1bgajw",
+      "nom": "PESI COLA",
+      "categorieId": "petit"
+    },
+    {
+      "id": "prod_mr3see1bhm05",
+      "nom": "IRA",
+      "categorieId": "iragrand"
+    },
+    {
+      "id": "prod_mr3see1btwcx",
+      "nom": "SIRENES",
+      "categorieId": "petit"
+    },
+    {
+      "id": "prod_mr4pmvdjl026",
+      "nom": "SUGU Apple",
+      "categorieId": "grand"
+    },
+    {
+      "id": "prod_mr4ppjdqwjef",
+      "nom": "Premia",
+      "categorieId": "petit"
+    },
+    {
+      "id": "prod_mr4tonryw2fv",
+      "nom": "Perfect",
+      "categorieId": "perfect"
+    },
+    {
+      "id": "prod_mr4tqd6i99as",
+      "nom": "Bramali",
+      "categorieId": "bramali"
+    },
+    {
+      "id": "prod_mranh17105bo",
+      "nom": "W7/500",
+      "categorieId": "grand"
+    },
+    {
+      "id": "prod_mranh17206q2",
+      "nom": "Ira /500",
+      "categorieId": "iragrand"
+    },
+    {
+      "id": "prod_mranh17283lc",
+      "nom": "Fanta canette",
+      "categorieId": "grand"
+    }
+  ],
+  "stockDepart": {
+    "date": "2026-07-06",
+    "modifie": null,
+    "lignes": {
+      "grand": 23,
+      "petit": 58,
+      "iragrand": 0,
+      "irapetit": 0,
+      "bramali": 55,
+      "paps": 0,
+      "juspp": 0,
+      "diago": 14,
+      "perfect": 9
+    },
+    "couts": {
+      "grand": 247,
+      "petit": 250,
+      "iragrand": 438,
+      "irapetit": 0,
+      "bramali": 92,
+      "paps": 0,
+      "juspp": 0,
+      "diago": 253,
+      "perfect": 56
+    }
+  },
+  "achats": [
+    {
+      "id": "ach_mranh1714kwu",
+      "date": "2026-07-05",
+      "fournisseurId": "four_mranh171ud29",
+      "fournisseur": "Boutique commerce",
+      "produit": "W7/500",
+      "categorieId": "grand",
+      "cartons": 1,
+      "contenu": 24,
+      "quantite": 24,
+      "prixGlobal": 10500,
+      "prixUnitaire": 437.5,
+      "montantPaye": 10500
+    },
+    {
+      "id": "ach_mranh172lqtg",
+      "date": "2026-07-05",
+      "fournisseurId": "four_mranh171ud29",
+      "fournisseur": "Boutique commerce",
+      "produit": "Ira /500",
+      "categorieId": "iragrand",
+      "cartons": 1,
+      "contenu": 24,
+      "quantite": 24,
+      "prixGlobal": 10500,
+      "prixUnitaire": 437.5,
+      "montantPaye": 10500
+    },
+    {
+      "id": "ach_mranh172yrvm",
+      "date": "2026-07-05",
+      "fournisseurId": "four_mranh171ud29",
+      "fournisseur": "Boutique commerce",
+      "produit": "Fanta canette",
+      "categorieId": "grand",
+      "cartons": 1,
+      "contenu": 24,
+      "quantite": 24,
+      "prixGlobal": 8500,
+      "prixUnitaire": 354.1666666666667,
+      "montantPaye": 8500
+    },
+    {
+      "id": "ach_mranh1722muz",
+      "date": "2026-07-05",
+      "fournisseurId": "four_mranh171ud29",
+      "fournisseur": "Boutique commerce",
+      "produit": "ACHOURA",
+      "categorieId": "grand",
+      "cartons": 1,
+      "contenu": 24,
+      "quantite": 24,
+      "prixGlobal": 9000,
+      "prixUnitaire": 375,
+      "montantPaye": 9000
+    },
+    {
+      "id": "ach_mrbmt9y6ec3m",
+      "date": "2026-07-06",
+      "fournisseurId": "four_mr4tonryslju",
+      "fournisseur": "Zerbo",
+      "produit": "Bramali",
+      "categorieId": "bramali",
+      "cartons": 5,
+      "contenu": 12,
+      "quantite": 60,
+      "prixGlobal": 10000,
+      "prixUnitaire": 166.66666666666666,
+      "montantPaye": 10000
+    },
+    {
+      "id": "ach_mrdetml390jv",
+      "date": "2026-07-06",
+      "fournisseurId": null,
+      "fournisseur": "",
+      "produit": "Perfect",
+      "categorieId": "perfect",
+      "cartons": 6,
+      "contenu": 24,
+      "quantite": 144,
+      "prixGlobal": 12000,
+      "prixUnitaire": 83.33333333333333,
+      "montantPaye": 0
+    },
+    {
+      "id": "ach_mrg6pnks5jh0",
+      "date": "2026-06-29",
+      "fournisseurId": null,
+      "fournisseur": "",
+      "produit": "EAU DIAGO",
+      "categorieId": "diago",
+      "cartons": 2,
+      "contenu": 12,
+      "quantite": 24,
+      "prixGlobal": 6500,
+      "prixUnitaire": 270.8333333333333,
+      "montantPaye": 6500
+    }
+  ],
+  "fournisseurs": [
+    {
+      "id": "four_mr3see1ahwbs",
+      "nom": "DIARRA",
+      "tel": ""
+    },
+    {
+      "id": "four_mr3see1b26q3",
+      "nom": "BOCOUM",
+      "tel": ""
+    },
+    {
+      "id": "four_mr3see1b06yg",
+      "nom": "DEPOT BARAKA",
+      "tel": ""
+    },
+    {
+      "id": "four_mr4pmvdjx35f",
+      "nom": "Teol",
+      "tel": ""
+    },
+    {
+      "id": "four_mr4ppjdq94uv",
+      "nom": "Teofil",
+      "tel": ""
+    },
+    {
+      "id": "four_mr4tonryslju",
+      "nom": "Zerbo",
+      "tel": ""
+    },
+    {
+      "id": "four_mranh171ud29",
+      "nom": "Boutique commerce",
+      "tel": ""
+    }
+  ],
+  "paiements": [
+    {
+      "id": "pay_mranh172t18m",
+      "date": "2026-07-05",
+      "fournisseurId": "four_mranh171ud29",
+      "achatId": null,
+      "montant": 38500,
+      "note": "Paiement facture"
+    },
+    {
+      "id": "pay_mrhrr8nn58yj",
+      "date": "2026-07-12",
+      "fournisseurId": "four_mr4tonryslju",
+      "achatId": null,
+      "montant": 10000,
+      "note": "Paiement"
+    }
+  ],
+  "soldeDepartCaisse": 60000,
+  "inventaires": [
+    {
+      "id": "inv_mrhyo903e60k",
+      "date": "2026-07-12",
+      "heure": "15:41",
+      "lignes": [
+        {
+          "categorieId": "grand",
+          "nom": "Grand Canette",
+          "prix": 500,
+          "stockAvant": 95,
+          "compte": 62,
+          "vendu": 33,
+          "montant": 16500,
+          "surplus": 0
+        },
+        {
+          "categorieId": "petit",
+          "nom": "Petit Canette",
+          "prix": 300,
+          "stockAvant": 58,
+          "compte": 9,
+          "vendu": 49,
+          "montant": 14700,
+          "surplus": 0
+        },
+        {
+          "categorieId": "iragrand",
+          "nom": "IRA Grand",
+          "prix": 600,
+          "stockAvant": 24,
+          "compte": 24,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "irapetit",
+          "nom": "IRA Petit",
+          "prix": 350,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "bramali",
+          "nom": "Bramali",
+          "prix": 200,
+          "stockAvant": 115,
+          "compte": 36,
+          "vendu": 79,
+          "montant": 15800,
+          "surplus": 0
+        },
+        {
+          "categorieId": "paps",
+          "nom": "Pap's Soda",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "juspp",
+          "nom": "Jus PP",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "diago",
+          "nom": "Diago",
+          "prix": 400,
+          "stockAvant": 38,
+          "compte": 38,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "perfect",
+          "nom": "Perfect",
+          "prix": 150,
+          "stockAvant": 153,
+          "compte": 106,
+          "vendu": 47,
+          "montant": 7050,
+          "surplus": 0
+        }
+      ],
+      "totalCA": 54050
+    },
+    {
+      "id": "inv_mrhz73qw8c7o",
+      "date": "2026-07-12",
+      "heure": "15:56",
+      "lignes": [
+        {
+          "categorieId": "grand",
+          "nom": "Grand Canette",
+          "prix": 500,
+          "stockAvant": 62,
+          "compte": 62,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "petit",
+          "nom": "Petit Canette",
+          "prix": 300,
+          "stockAvant": 9,
+          "compte": 9,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "iragrand",
+          "nom": "IRA Grand",
+          "prix": 600,
+          "stockAvant": 24,
+          "compte": 24,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "irapetit",
+          "nom": "IRA Petit",
+          "prix": 350,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "bramali",
+          "nom": "Bramali",
+          "prix": 200,
+          "stockAvant": 36,
+          "compte": 36,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "paps",
+          "nom": "Pap's Soda",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "juspp",
+          "nom": "Jus PP",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "diago",
+          "nom": "Diago",
+          "prix": 400,
+          "stockAvant": 38,
+          "compte": 0,
+          "vendu": 38,
+          "montant": 15200,
+          "surplus": 0
+        },
+        {
+          "categorieId": "perfect",
+          "nom": "Perfect",
+          "prix": 150,
+          "stockAvant": 106,
+          "compte": 106,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        }
+      ],
+      "totalCA": 15200
+    },
+    {
+      "id": "inv_mri1u63nsmnq",
+      "date": "2026-07-12",
+      "heure": "17:10",
+      "lignes": [
+        {
+          "categorieId": "grand",
+          "nom": "Grand Canette",
+          "prix": 500,
+          "stockAvant": 62,
+          "compte": 62,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "petit",
+          "nom": "Petit Canette",
+          "prix": 300,
+          "stockAvant": 9,
+          "compte": 9,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "iragrand",
+          "nom": "IRA Grand",
+          "prix": 600,
+          "stockAvant": 24,
+          "compte": 0,
+          "vendu": 24,
+          "montant": 14400,
+          "surplus": 0
+        },
+        {
+          "categorieId": "irapetit",
+          "nom": "IRA Petit",
+          "prix": 350,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "bramali",
+          "nom": "Bramali",
+          "prix": 200,
+          "stockAvant": 36,
+          "compte": 36,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "paps",
+          "nom": "Pap's Soda",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "juspp",
+          "nom": "Jus PP",
+          "prix": 200,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "diago",
+          "nom": "Diago",
+          "prix": 400,
+          "stockAvant": 0,
+          "compte": 0,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        },
+        {
+          "categorieId": "perfect",
+          "nom": "Perfect",
+          "prix": 150,
+          "stockAvant": 106,
+          "compte": 106,
+          "vendu": 0,
+          "montant": 0,
+          "surplus": 0
+        }
+      ],
+      "totalCA": 14400
+    }
+  ],
+  "depenses": [],
+  "versements": [],
+  "parametres": {
+    "boutique": "Mon Frigo",
+    "devise": "F",
+    "gerant": "Moi meme"
+  },
+  "clients": [],
+  "creances": [],
+  "paiementsClients": [],
+  "corbeille": [],
+  "regularisations": [
+    {
+      "id": "reg_mri1eodacqqi",
+      "date": "2026-07-12",
+      "user": "Moi meme",
+      "motif": "Casse",
+      "lignes": [
+        {
+          "categorieId": "iragrand",
+          "nom": "IRA Grand",
+          "ancienStock": 24,
+          "nouveauStock": 0,
+          "ecart": -24
+        }
+      ]
+    },
+    {
+      "id": "reg_mri1t62pcqps",
+      "date": "2026-07-12",
+      "user": "Moi meme",
+      "motif": "Autre",
+      "lignes": [
+        {
+          "categorieId": "iragrand",
+          "nom": "IRA Grand",
+          "ancienStock": 0,
+          "nouveauStock": 24,
+          "ecart": 24
+        }
+      ]
+    }
+  ],
+  "emprunts": [
+    {
+      "id": "emp_mri1cj4rh4rr",
+      "date": "2026-04-30",
+      "preteur": "Avec la mutuelle",
+      "motif": "Frigo",
+      "montant": 630000,
+      "montantARembourser": 630000
+    }
+  ],
+  "remboursementsEmprunt": [],
+  "cafeAchats": [
+    {
+      "id": "ca_mraj9jkw381u",
+      "date": "2026-07-05",
+      "article": "Café et accessoires",
+      "montant": 15000,
+      "fournisseur": "Boutique",
+      "note": ""
+    },
+    {
+      "id": "ca_mrddhmgohxxe",
+      "date": "2026-07-08",
+      "article": "Plastique et accessoires",
+      "montant": 5000,
+      "fournisseur": "Moi meme",
+      "note": ""
+    }
+  ],
+  "cafeVentes": [
+    {
+      "id": "cv_mrdy163545r1",
+      "date": "2026-07-09",
+      "montant": 33200,
+      "note": "Versement Teofil"
+    }
+  ],
+  "regularisationsCaisse": [],
+  "archivesSemaines": [
+    {
+      "id": "sem_mr91isxw4hjb",
+      "cloturLe": "2026-07-06",
+      "dateDebut": "2026-07-01",
+      "dateFin": "2026-07-06",
+      "ventes": 128550,
+      "achats": 118100,
+      "depenses": 0,
+      "benefice": 46588.55742880971,
+      "cafeVentes": 55300,
+      "cafeAchats": 15300,
+      "cafeResultat": 40000,
+      "soldeCaisseFin": 60000,
+      "valeurStock": 46850,
+      "detteFournisseurs": 0,
+      "creancesClients": 0,
+      "detteEmprunts": 0
+    }
+  ],
+  "cafeSoldeReporte": 40000
+}
