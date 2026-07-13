@@ -395,6 +395,19 @@ function migrerDB(){
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   // seuil d'alerte par catégorie (défaut 15)
   DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
+  // Réparation : relier chaque achat à un fournisseur (une dette ne doit jamais devenir invisible)
+  if(DB.achats && DB.fournisseurs){
+    for(const a of DB.achats){
+      const lie = a.fournisseurId && DB.fournisseurs.some(f=>f.id===a.fournisseurId);
+      if(lie) continue;
+      const reste = (Number(a.prixGlobal)||0) - (Number(a.montantPaye)||0);
+      const nomA = (a.fournisseur||'').trim();
+      if(nomA || reste > 0){
+        const f = trouverOuCreerFournisseur(nomA || 'Divers');
+        if(f){ a.fournisseurId = f.id; a.fournisseur = f.nom; }
+      }
+    }
+  }
 }
 
 function sauverDB(){
@@ -551,8 +564,9 @@ function ajouterAchat({date, fournisseur, produitNom, categorieId, cartons, cont
     prod.categorieId = categorieId;
   }
 
-  // fournisseur
-  const f = trouverOuCreerFournisseur(fournisseur);
+  // fournisseur (si aucun nom : « Divers », pour que la dette et le paiement restent visibles)
+  let f = trouverOuCreerFournisseur(fournisseur);
+  if(!f && prixGlobal > 0) f = trouverOuCreerFournisseur('Divers');
 
   const achat = {
     id: uid('ach'), date, fournisseurId: f ? f.id : null, fournisseur: f ? f.nom : '',
@@ -620,7 +634,8 @@ function supprimerAchat(id){
    paiementMode = 'tout' | 'rien' | 'partiel' ; montantPartiel = nombre si partiel */
 function ajouterFacture({date, fournisseur, lignes, paiementMode, montantPartiel}){
   date = date || auj();
-  const f = trouverOuCreerFournisseur(fournisseur);
+  let f = trouverOuCreerFournisseur(fournisseur);
+  if(!f) f = trouverOuCreerFournisseur('Divers');
   const crees = [];
   let total = 0;
   for(const l of lignes){
@@ -1081,7 +1096,7 @@ function stats(){
     if(stk>0) valeurStockVente += stk * cat.prix;
   }
 
-  const dettesFournisseurs = totalAchats - totalAchatsPayes;
+  const dettesFournisseurs = totalDettesFournisseurs();
 
   return {
     totalAchats, totalAchatsPayes, dettesFournisseurs,
@@ -2578,7 +2593,7 @@ function pagePlus(){
     </div>
 
     <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
-      FRIGO • version du 21-06 (Clôture ✓) • Vos données restent sur votre téléphone
+      FRIGO • version du 13-07 (Fournisseurs ✓) • Vos données restent sur votre téléphone
     </div>
   </div>`;
 }
