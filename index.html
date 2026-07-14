@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<meta name="frigo-version" content="13-07-2026 v2 (MAJ auto ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -2593,7 +2594,9 @@ function pagePlus(){
     </div>
 
     <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
-      FRIGO • version du 13-07 (Fournisseurs ✓) • Vos données restent sur votre téléphone
+    <button class="btn btn-ghost" onclick="verifierMiseAJourManuelle()" style="margin:14px 0 0">🔄 Vérifier les mises à jour</button>
+    <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:14px 0 20px">
+      FRIGO • version ${versionApp()} • Vos données restent sur votre téléphone
     </div>
   </div>`;
 }
@@ -4876,6 +4879,63 @@ function enregistrerSoldeCafe(){
   closeSheet();
   go('cafe');
 }
+/* ============================================================
+   VÉRIFICATEUR DE MISE À JOUR
+   Compare la version installée avec celle en ligne (GitHub Pages)
+   et propose de recharger en contournant le cache.
+   ============================================================ */
+function versionApp(){
+  const m = document.querySelector('meta[name="frigo-version"]');
+  return m ? m.content : '?';
+}
+
+async function verifierMiseAJour(){
+  try{
+    if(location.protocol === 'file:') return 'impossible';
+    const url = location.pathname + '?maj=' + Date.now();   // requête unique = cache contourné
+    const r = await fetch(url, {cache:'no-store'});
+    if(!r.ok) return 'impossible';
+    const txt = await r.text();
+    const m = txt.match(/frigo-version" content="([^"]+)"/);
+    if(!m || !m[1]) return 'impossible';
+    if(m[1] !== versionApp()){ afficherBandeauMAJ(m[1]); return 'nouvelle'; }
+    return 'ajour';
+  }catch(e){ return 'impossible'; }
+}
+
+function afficherBandeauMAJ(nouvelleVersion){
+  if(document.getElementById('bandeauMaj')) return;
+  const b = document.createElement('div');
+  b.id = 'bandeauMaj';
+  b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:78px;z-index:9999;background:linear-gradient(135deg,#F59E0B,#FBBF24);color:#221703;font-weight:800;padding:13px 15px;border-radius:14px;box-shadow:0 10px 26px rgba(0,0,0,.5);text-align:center;font-size:14px;cursor:pointer';
+  b.innerHTML = '🔄 Nouvelle version disponible<br><span style="font-weight:600;font-size:12px">Touchez ici pour mettre à jour — vos données sont conservées</span>';
+  b.onclick = appliquerMiseAJour;
+  document.body.appendChild(b);
+}
+
+function appliquerMiseAJour(){
+  // instantané de sécurité des données juste avant la mise à jour
+  try{ localStorage.setItem('frigo_backup_avant_maj', JSON.stringify({date: new Date().toISOString(), version: versionApp(), db: DB})); }catch(e){}
+  location.href = location.pathname + '?v=' + Date.now();   // rechargement version fraîche, données intactes
+}
+
+let _derniereVerifMaj = 0;
+function verifierMajSiBesoin(){
+  const t = Date.now();
+  if(t - _derniereVerifMaj < 10*60*1000) return;   // au plus une fois toutes les 10 min
+  _derniereVerifMaj = t;
+  verifierMiseAJour();
+}
+async function verifierMiseAJourManuelle(){
+  toast('Vérification en cours…');
+  const res = await verifierMiseAJour();
+  if(res === 'ajour') toast('Vous avez déjà la dernière version ✓');
+  else if(res === 'impossible') toast('Vérification impossible (hors ligne ?)','err');
+}
+try{
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') verifierMajSiBesoin(); });
+  setTimeout(verifierMajSiBesoin, 2500);   // première vérification après le démarrage
+}catch(e){}
 </script>
 </body>
 </html>
