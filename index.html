@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="13-07-2026 v2 (MAJ auto ✓)">
+<meta name="frigo-version" content="22-07-2026 v7 (Achats par date ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -393,6 +393,7 @@ function migrerDB(){
   if(DB.cafeSoldeReporte == null) DB.cafeSoldeReporte = 0;
   if(!DB.regularisationsCaisse) DB.regularisationsCaisse = [];
   if(!DB.archivesSemaines) DB.archivesSemaines = [];
+  if(!DB.ventesJour) DB.ventesJour = [];
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   // seuil d'alerte par catégorie (défaut 15)
   DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
@@ -1200,13 +1201,14 @@ function resumeSemaineActuelle(){
                     : (DB.inventaires[0] ? DB.inventaires[0].date : auj());
   const dateFin = auj();
   let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
+  let ventesSaisies = 0; for(const v of (DB.ventesJour||[])) ventesSaisies += v.montant;
   let achats = 0; for(const a of DB.achats){ if(!a.reporte) achats += a.prixGlobal; }
   let depenses = 0; for(const d of DB.depenses) depenses += d.montant;
   const ben = beneficePeriode('2000-01-01','2999-12-31');   // toute la période en cours
   const cafe = statsCafe();
   let valeurStock = 0; for(const c of DB.categories){ const s = stockCategorie(c.id); if(s>0) valeurStock += s*c.prix; }
   return {
-    dateDebut, dateFin, ventes, achats, depenses,
+    dateDebut, dateFin, ventes, achats, depenses, ventesSaisies,
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
     cafeSoldeTotal: cafe.soldeTotal,
@@ -1227,6 +1229,7 @@ function rapportSemaineTexte(r){
   L.push('Du ' + dateFr(r.dateDebut) + ' au ' + dateFr(r.dateFin));
   L.push('——————————————');
   L.push('💵 Ventes boissons : ' + fmt(r.ventes) + ' ' + dev);
+  if(r.ventesSaisies) L.push('✍️ Ventes saisies (journal) : ' + fmt(r.ventesSaisies) + ' ' + dev);
   L.push('🛒 Achats boissons : ' + fmt(r.achats) + ' ' + dev);
   L.push('💸 Dépenses : ' + fmt(r.depenses) + ' ' + dev);
   L.push('📈 Bénéfice boissons : ' + fmt(r.benefice) + ' ' + dev);
@@ -1283,6 +1286,7 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.paiements = [];
   DB.regularisations = [];
   DB.regularisationsCaisse = [];
+  DB.ventesJour = [];
   // Café : reporter le solde (à-nouveau) avant d'effacer l'activité de la semaine
   {
     let cv = 0, ca = 0;
@@ -1725,6 +1729,7 @@ function restaurerCorbeille(id){
   else if(item.type==='paiementClient'){ DB.paiementsClients.push(d); }
   else if(item.type==='regularisation'){ DB.regularisations.push(d); }
   else if(item.type==='emprunt'){ if(d.emprunt){ DB.emprunts.push(d.emprunt); (d.remboursements||[]).forEach(r=>DB.remboursementsEmprunt.push(r)); } }
+  else if(item.type==='venteJour'){ if(!DB.ventesJour) DB.ventesJour = []; DB.ventesJour.push(d); }
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
   else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
   else if(item.type==='regulCaisse'){ DB.regularisationsCaisse.push(d); }
@@ -2023,6 +2028,8 @@ function go(page){
   else if(page==='clients') { c.innerHTML = pageClients(); }
   else if(page==='emprunts') { c.innerHTML = pageEmprunts(); }
   else if(page==='cafe') { c.innerHTML = pageCafe(); }
+  else if(page==='ventesjour') { c.innerHTML = pageVentesJour(); }
+  else if(page==='achatsjour') { c.innerHTML = pageAchatsJour(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
@@ -2072,6 +2079,7 @@ function pageAccueil(){
       </div>
     </div>
 
+    ${blocAlerteSauvegarde()}
     ${blocDetailCaisse()}
     <button class="btn btn-ghost" onclick="go('caisse')" style="margin-bottom:16px">💰 Ouvrir la caisse</button>
 
@@ -2234,6 +2242,7 @@ function pageAchats(){
         ${dernier ? `<button class="btn btn-ghost" onclick="refaireDernierAchat()">🔁 Refaire le dernier</button>` : ''}
         <button class="btn btn-ghost" onclick="openImportSheet()">📥 Importer (CSV/Excel)</button>
         <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
+        <button class="btn btn-ghost" onclick="go('achatsjour')">📆 Achats par date</button>
       </div>
     </div>
 
@@ -2504,6 +2513,8 @@ function pagePlus(){
         <button class="btn btn-ghost" onclick="go('benefice')">📈 Bénéfice</button>
         <button class="btn btn-ghost" onclick="go('stock')">📦 Stock</button>
       </div>
+      <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-top:10px">📅 Ventes journalières</button>
+      <button class="btn btn-ghost" onclick="go('achatsjour')" style="margin-top:10px">📆 Achats par date</button>
       <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
       <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
     </div>
@@ -3021,6 +3032,35 @@ function pageCafe(){
       <button class="btn btn-ghost" onclick="openAchatCafeSheet()">🛒 Achat café / accessoires</button>
     </div>
 
+    ${(function(){
+      const jours = cafeParJour(per.debut, per.fin);
+      const av = statsCafeAvancees(per.debut, per.fin);
+      const arts = cafeAchatsParArticle(per.debut, per.fin);
+      let html = '';
+      if(av.nbJours > 0){
+        html += `<div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:14px;margin-bottom:8px">📈 En bref (${titre.toLowerCase()})</div>
+          <div class="cat-meta" style="font-size:13px;line-height:1.7">${av.nbJours} jour(s) de vente • moyenne <b>${fmt(av.moyenneJour)} ${dev}</b> par jour${av.meilleurJour ? ` • meilleur jour : <b>${dateFr(av.meilleurJour.date)}</b> (${fmt(av.meilleurJour.ventes)} ${dev})` : ''}</div>
+        </div>`;
+      }
+      if(jours.length){
+        html += `<div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:14px;margin-bottom:8px">📅 Jour par jour</div>
+          <table class="tbl" style="font-size:12.5px">
+            <tr><th>Date</th><th class="num">Ventes</th><th class="num">Achats</th><th class="num">Résultat</th></tr>
+            ${jours.slice(0,15).map(function(x){ return `<tr><td>${dateFr(x.date)}</td><td class="num" style="color:var(--vert)">${fmt(x.ventes)}</td><td class="num" style="color:var(--rouge)">${x.achats ? fmt(x.achats) : '—'}</td><td class="num" style="font-weight:700;color:${x.resultat<0?'var(--rouge)':'var(--vert)'}">${fmt(x.resultat)}</td></tr>`; }).join('')}
+          </table>
+          ${jours.length>15 ? `<div class="hint" style="margin-top:8px">${jours.length-15} jour(s) plus ancien(s) non affichés</div>` : ''}
+        </div>`;
+      }
+      if(arts.length){
+        html += `<div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:14px;margin-bottom:8px">🛒 Achats par article</div>
+          ${arts.map(function(a){ return `<div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${a.article}</div><div class="cat-meta">${a.nb} achat(s)</div></div><span style="font-weight:700">${fmt(a.total)} ${dev}</span></div>`; }).join('')}
+        </div>`;
+      }
+      return html;
+    })()}
     <div class="card" style="margin-bottom:14px">
       <div class="card-title" style="font-size:14px;margin-bottom:8px">💵 Ventes récentes</div>
       ${ventes.length===0 ? '<div class="hint">Aucune vente sur la période</div>' :
@@ -3090,6 +3130,8 @@ function pageArchives(){
     <div class="page-title">📅 Historique des semaines</div>
     <div class="page-sub">Chaque semaine clôturée est gardée ici.</div>
 
+    ${blocComparaisonSemaines()}
+
     ${arch.length===0 ? `
       <div class="empty"><div class="e-ic">📅</div><div>Aucune semaine clôturée</div>
       <div style="font-size:13px;margin-top:6px">Quand vous clôturez une semaine, son résumé apparaît ici</div></div>
@@ -3153,6 +3195,7 @@ function bindPlus(){
     a.download = `frigo_sauvegarde_${auj()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    marquerSauvegarde();
     toast('Sauvegarde téléchargée ✓');
   }
   function faireImport(file){
@@ -4697,6 +4740,7 @@ function telechargerSauvegarde(){
     const a = document.createElement('a');
     a.href = url; a.download = 'frigo_sauvegarde_' + auj() + '.json';
     a.click(); URL.revokeObjectURL(url);
+    marquerSauvegarde();
     return true;
   }catch(e){ return false; }
 }
@@ -4819,6 +4863,7 @@ function copierTexteBackup(id){
   let ok=false;
   try{ ta.select(); ta.setSelectionRange(0,999999); ok=document.execCommand('copy'); }catch(e){}
   try{ if(navigator.clipboard && ta){ navigator.clipboard.writeText(ta.value); ok=true; } }catch(e){}
+  if(ok) marquerSauvegarde();
   toast(ok?'Copié ✓':'Sélectionnez le texte et copiez-le');
 }
 
@@ -4936,6 +4981,453 @@ try{
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') verifierMajSiBesoin(); });
   setTimeout(verifierMajSiBesoin, 2500);   // première vérification après le démarrage
 }catch(e){}
+/* ============================================================
+   VENTES JOURNALIÈRES (à partir des inventaires)
+   ============================================================ */
+function ventesParJour(){
+  const map = {};
+  const vide = (d)=>({ date:d, total:0, articles:0, categories:{}, saisi:0 });
+  for(const inv of DB.inventaires){
+    if(!map[inv.date]) map[inv.date] = vide(inv.date);
+    const j = map[inv.date];
+    j.total += inv.totalCA;
+    for(const l of inv.lignes){
+      if(l.vendu > 0){
+        j.articles += l.vendu;
+        if(!j.categories[l.categorieId]) j.categories[l.categorieId] = { nom:l.nom, prix:l.prix, vendu:0, montant:0 };
+        j.categories[l.categorieId].vendu += l.vendu;
+        j.categories[l.categorieId].montant += l.montant;
+      }
+    }
+  }
+  for(const v of (DB.ventesJour||[])){
+    if(!map[v.date]) map[v.date] = vide(v.date);
+    map[v.date].saisi += v.montant;
+  }
+  return Object.values(map).sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function pageVentesJour(){
+  const jours = ventesParJour();
+  const dev = DB.parametres.devise;
+  const aujd = jours.find(j=>j.date===auj());
+  const per = periodeSemaine(auj());
+  let totalSemaine = 0, saisiSemaine = 0;
+  jours.forEach(j=>{ if(j.date>=per.debut && j.date<=per.fin){ totalSemaine += j.total; saisiSemaine += j.saisi; } });
+  const saisiAujd = aujd ? aujd.saisi : 0;
+  return `
+  <div class="page">
+    <div class="page-title">📅 Ventes journalières</div>
+    <div class="page-sub">Notez chaque jour ce que vous avez vendu. La comparaison se fait à chaque inventaire, quel que soit son rythme.</div>
+
+    <div class="metrics" style="margin-bottom:10px">
+      <div class="metric accent"><div class="m-label">Aujourd'hui (saisi)</div><div class="m-value mono">${fmt(saisiAujd)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">Cette semaine (saisi)</div><div class="m-value mono">${fmt(saisiSemaine)} ${dev}</div></div>
+    </div>
+    <div class="hint" style="margin-bottom:14px;text-align:center">Calculé par les inventaires : ${fmt(aujd?aujd.total:0)} aujourd'hui • ${fmt(totalSemaine)} cette semaine</div>
+
+    <button class="btn btn-ambre" onclick="openVenteJourSheet()" style="margin-bottom:16px">✍️ Saisir la vente du jour</button>
+
+    ${(function(){
+      const pers = periodesInventaire();
+      if(!pers.length) return '';
+      const jm = (d)=> dateFr(d).slice(0,5);
+      return `<div class="card" style="margin-bottom:14px">
+        <div class="card-title" style="font-size:14px;margin-bottom:6px">⚖️ Comparaison avec vos inventaires</div>
+        <div class="hint" style="margin-bottom:10px">Chaque inventaire couvre tous les jours depuis le comptage précédent. C'est ici que l'écart a un sens.</div>
+        ${pers.map(function(p){
+          if(p.enCours){
+            return `<div class="cat-row"><div class="cat-info">
+              <div class="cat-name" style="font-size:14px">⏳ En cours</div>
+              <div class="cat-meta">depuis ${p.debut?'le '+jm(p.debut):'le début'} • pas encore d'inventaire</div></div>
+              <span style="font-weight:700">${fmt(p.saisi)} ${dev}</span></div>`;
+          }
+          const ec = p.saisi>0 ? p.saisi - p.calcule : null;
+          const coul = ec===null ? 'var(--texte-doux)' : (ec<0 ? 'var(--rouge)' : (ec>0 ? 'var(--ambre)' : 'var(--vert)'));
+          return `<div class="cat-row"><div class="cat-info">
+            <div class="cat-name" style="font-size:14px">📋 Inventaire du ${jm(p.fin)}</div>
+            <div class="cat-meta">depuis ${p.debut?'le '+jm(p.debut):'le début'} • saisi ${fmt(p.saisi)} / calculé ${fmt(p.calcule)}</div></div>
+            <span style="font-weight:700;color:${coul}">${ec===null?'—':(ec>0?'+':'')+fmt(ec)}</span></div>`;
+        }).join('')}
+      </div>`;
+    })()}
+
+    ${jours.length===0 ? `
+      <div class="empty"><div class="e-ic">📅</div><div>Aucune vente pour le moment</div>
+      <div style="font-size:13px;margin-top:6px">Touchez « Saisir la vente du jour » pour commencer</div></div>
+    ` : `
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px">Touchez une ligne pour le détail du jour.</div>
+      <table class="tbl" style="font-size:12.5px">
+        <tr><th>Date</th><th class="num">Saisi</th><th class="num">Inventaire</th></tr>
+        ${jours.slice(0,30).map(j=>`<tr onclick="openJourVentesSheet('${j.date}')" style="cursor:pointer">
+            <td>${dateFr(j.date)}</td>
+            <td class="num" style="font-weight:700">${j.saisi>0?fmt(j.saisi):'—'}</td>
+            <td class="num" style="color:var(--vert)">${j.total>0?'📋 '+fmt(j.total):'—'}</td>
+          </tr>`).join('')}
+      </table>
+      ${jours.length>30 ? `<div class="hint" style="margin-top:8px">${jours.length-30} jour(s) plus ancien(s) non affichés</div>` : ''}
+    </div>`}
+  </div>`;
+}
+
+function openJourVentesSheet(date){
+  const j = ventesParJour().find(x=>x.date===date);
+  if(!j) return;
+  const dev = DB.parametres.devise;
+  const cats = Object.values(j.categories).sort((a,b)=> b.montant - a.montant);
+  const saisies = (DB.ventesJour||[]).filter(v=>v.date===date);
+  sheet(`
+    <h2>📅 ${dateFr(j.date)}</h2>
+    <div class="s-sub">Ce que vous avez saisi, et ce que l'inventaire a calculé.</div>
+    <div class="metrics" style="margin-bottom:10px">
+      <div class="metric accent"><div class="m-label">Saisi ce jour</div><div class="m-value mono">${fmt(j.saisi)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">Inventaire</div><div class="m-value mono">${fmt(j.total)} ${dev}</div></div>
+    </div>
+    ${j.total>0 ? `<div class="hint" style="margin-bottom:14px;text-align:center">📋 Ce montant vient de l'inventaire fait ce jour-là : il couvre les ventes depuis le comptage précédent, pas seulement cette journée. Pour comparer, voyez « Comparaison avec vos inventaires ».</div>` : '<div style="height:8px"></div>'}
+
+    <button class="btn btn-ambre" onclick="openVenteJourSheet('${date}')" style="margin-bottom:14px">➕ Ajouter une vente pour ce jour</button>
+
+    ${saisies.length ? `<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">✍️ Ventes saisies</div>
+      ${saisies.map(v=>`<div class="cat-row">
+        <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(v.montant)} ${dev}</div>
+        <div class="cat-meta">${v.note||'—'}</div></div>
+        <button class="btn btn-sm btn-ghost" onclick="supprVenteJourUI('${v.id}')">🗑️</button>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${cats.length ? `<div class="card">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">📦 Détail calculé par l'inventaire</div>
+      <table class="tbl" style="font-size:13px">
+        <tr><th>Produit</th><th class="num">Vendu</th><th class="num">Montant</th></tr>
+        ${cats.map(c=>`<tr><td>${c.nom}</td><td class="num">${fmt(c.vendu)}</td><td class="num">${fmt(c.montant)}</td></tr>`).join('')}
+      </table>
+    </div>` : ''}
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+
+/* Périodes couvertes par chaque inventaire.
+   Un inventaire couvre tous les jours écoulés depuis le comptage précédent :
+   c'est à cette échelle (et pas jour par jour) que la comparaison a un sens. */
+function periodesInventaire(){
+  const parDate = {};
+  for(const inv of DB.inventaires){
+    if(!parDate[inv.date]) parDate[inv.date] = { date: inv.date, calcule: 0 };
+    parDate[inv.date].calcule += inv.totalCA;
+  }
+  const dates = Object.values(parDate).sort((a,b)=> a.date<b.date?-1:1);
+  const saisies = DB.ventesJour || [];
+  const res = [];
+  let precedent = null;
+  for(const d of dates){
+    let saisi = 0;
+    for(const v of saisies){
+      if((!precedent || v.date > precedent) && v.date <= d.date) saisi += v.montant;
+    }
+    res.push({ debut: precedent, fin: d.date, calcule: d.calcule, saisi, enCours:false });
+    precedent = d.date;
+  }
+  // période en cours : saisies faites après le dernier inventaire
+  let apres = 0;
+  for(const v of saisies){ if(!precedent || v.date > precedent) apres += v.montant; }
+  if(apres > 0) res.push({ debut: precedent, fin: null, calcule: null, saisi: apres, enCours:true });
+  return res.reverse();
+}
+
+/* Journal de vente : montant saisi à la main pour un jour donné.
+   Volontairement séparé de la caisse (les inventaires l'alimentent déjà)
+   pour ne jamais compter le même argent deux fois. */
+function ajouterVenteJour({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  if(!DB.ventesJour) DB.ventesJour = [];
+  const v = { id: uid('vj'), date: date||auj(), montant, note:(note||'').trim() };
+  DB.ventesJour.push(v);
+  sauverDB();
+  return v;
+}
+function supprimerVenteJour(id){
+  const v = (DB.ventesJour||[]).find(x=>x.id===id);
+  if(v) versCorbeille('venteJour', v, 'Vente saisie du '+dateFr(v.date)+' ('+fmt(v.montant)+' '+DB.parametres.devise+')');
+  DB.ventesJour = (DB.ventesJour||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+function totalVentesSaisies(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  let t = 0;
+  for(const v of (DB.ventesJour||[])){ if(dans(v.date)) t += v.montant; }
+  return t;
+}
+
+function openVenteJourSheet(dateDef){
+  const d = dateDef || auj();
+  sheet(`
+    <h2>✍️ Vente du jour</h2>
+    <div class="s-sub">Notez le montant vendu ce jour-là. C'est votre journal de vente : il ne touche pas la caisse (déjà alimentée par vos inventaires).</div>
+    <div class="field"><label>Montant vendu (${DB.parametres.devise})</label>
+      <input class="input" id="vjMontant" type="number" inputmode="numeric" placeholder="Ex: 25000"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="vjNote" placeholder="Ex: matin, soir, vendeur…"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="vjDate" type="date" value="${d}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerVenteJour()">Enregistrer</button>
+    </div>
+  `);
+}
+function validerVenteJour(){
+  const montant = Number($('#vjMontant').value)||0;
+  const note = $('#vjNote').value.trim();
+  const date = $('#vjDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterVenteJour({date, montant, note});
+  toast('Vente du jour enregistrée ✓');
+  closeSheet();
+  go('ventesjour');
+}
+function supprVenteJourUI(id){
+  supprimerVenteJour(id);
+  toast('Supprimé (récupérable dans la corbeille)');
+  closeSheet();
+  go('ventesjour');
+}
+
+/* ============================================================
+   CAFÉ DÉTAILLÉ (jour par jour, achats par article, stats)
+   ============================================================ */
+function cafeParJour(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  const map = {};
+  for(const v of (DB.cafeVentes||[])){
+    if(!dans(v.date)) continue;
+    if(!map[v.date]) map[v.date] = { date:v.date, ventes:0, achats:0, nbVentes:0 };
+    map[v.date].ventes += v.montant; map[v.date].nbVentes++;
+  }
+  for(const a of (DB.cafeAchats||[])){
+    if(!dans(a.date)) continue;
+    if(!map[a.date]) map[a.date] = { date:a.date, ventes:0, achats:0, nbVentes:0 };
+    map[a.date].achats += a.montant;
+  }
+  return Object.values(map).map(j=>({ ...j, resultat: j.ventes - j.achats }))
+    .sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function cafeAchatsParArticle(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  const map = {};
+  for(const a of (DB.cafeAchats||[])){
+    if(!dans(a.date)) continue;
+    const cle = (a.article||'Autre').trim().toLowerCase();
+    if(!map[cle]) map[cle] = { article:(a.article||'Autre').trim()||'Autre', total:0, nb:0 };
+    map[cle].total += a.montant; map[cle].nb++;
+  }
+  return Object.values(map).sort((a,b)=> b.total - a.total);
+}
+
+function statsCafeAvancees(debut, fin){
+  const jours = cafeParJour(debut, fin).filter(j=>j.ventes>0);
+  const total = jours.reduce((s,j)=>s+j.ventes,0);
+  let meilleur = null;
+  for(const j of jours){ if(!meilleur || j.ventes>meilleur.ventes) meilleur = j; }
+  return {
+    nbJours: jours.length,
+    moyenneJour: jours.length ? Math.round(total/jours.length) : 0,
+    meilleurJour: meilleur
+  };
+}
+/* ============================================================
+   PROTECTION DES DONNÉES — suivi de la dernière sauvegarde
+   ============================================================ */
+function marquerSauvegarde(){
+  try{ localStorage.setItem('frigo_derniere_sauvegarde', new Date().toISOString()); }catch(e){}
+}
+function joursDepuisSauvegarde(){
+  try{
+    const t = localStorage.getItem('frigo_derniere_sauvegarde');
+    if(!t) return null;
+    const ms = Date.now() - new Date(t).getTime();
+    if(isNaN(ms)) return null;
+    return Math.max(0, Math.floor(ms / 86400000));
+  }catch(e){ return null; }
+}
+function blocAlerteSauvegarde(){
+  const j = joursDepuisSauvegarde();
+  if(j !== null && j < 3){
+    return `<div class="hint" style="text-align:center;margin-bottom:14px;color:var(--vert)">🛡️ Sauvegarde à jour (${j===0?"aujourd'hui":'il y a '+j+' jour'+(j>1?'s':'')})</div>`;
+  }
+  const msg = (j === null)
+    ? "Vos données ne sont enregistrées que sur ce téléphone. Faites une première sauvegarde et gardez-la sur WhatsApp."
+    : "Dernière sauvegarde il y a " + j + " jour" + (j>1?'s':'') + ". Gardez une copie à l'abri.";
+  return `<div class="card" style="border-color:var(--ambre);background:rgba(251,191,36,.08);margin-bottom:14px">
+    <div class="card-title" style="font-size:14px;margin-bottom:6px;color:var(--ambre)">🛡️ Protégez vos données</div>
+    <div class="hint" style="margin-bottom:10px">${msg}</div>
+    <button class="btn btn-ambre" onclick="openCopierSauvegardeSheet()">📋 Copier ma sauvegarde (WhatsApp)</button>
+  </div>`;
+}
+
+/* ============================================================
+   COMPARAISON DES SEMAINES (à partir des archives)
+   ============================================================ */
+function blocComparaisonSemaines(){
+  const arch = [...(DB.archivesSemaines||[])].sort((a,b)=> a.cloturLe<b.cloturLe?-1:1);
+  if(arch.length < 2) return '';
+  const dev = DB.parametres.devise;
+  const lab = (s)=> dateFr(s.dateFin || s.cloturLe).slice(0,5);
+  const dernieres = arch.slice(-8);
+  const dataV = dernieres.map(s=>({ label: lab(s), valeur: Math.max(0, s.ventes||0) }));
+  const dataB = dernieres.map(s=>({ label: lab(s), valeur: Math.max(0, s.benefice||0) }));
+  const moyV = Math.round(arch.reduce((t,s)=>t+(s.ventes||0),0)/arch.length);
+  const moyB = Math.round(arch.reduce((t,s)=>t+(s.benefice||0),0)/arch.length);
+  let best = arch[0];
+  for(const s of arch){ if((s.ventes||0) > (best.ventes||0)) best = s; }
+  const der = arch[arch.length-1], prec = arch[arch.length-2];
+  const diff = (der.ventes||0) - (prec.ventes||0);
+  const pct = (prec.ventes>0) ? Math.round(diff/prec.ventes*100) : null;
+  const coul = diff>0 ? 'var(--vert)' : (diff<0 ? 'var(--rouge)' : 'var(--texte-doux)');
+  const ligne = (label, valeur, style)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">${label}</span><span style="${style||'font-weight:600'}">${valeur}</span></div>`;
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">📈 Ventes par semaine</div>
+      ${graphBarres(dataV, '#34D399')}
+      <div class="card-title" style="font-size:14px;margin:14px 0 8px">💰 Bénéfice par semaine</div>
+      ${graphBarres(dataB, '#FBBF24')}
+      <div style="border-top:1px solid var(--bord);margin:12px 0 6px"></div>
+      ${ligne('Moyenne des ventes', fmt(moyV)+' '+dev)}
+      ${ligne('Moyenne du bénéfice', fmt(moyB)+' '+dev)}
+      ${ligne('Meilleure semaine', lab(best)+' • '+fmt(best.ventes)+' '+dev)}
+      ${ligne('Dernière vs précédente', (diff>0?'+':'')+fmt(diff)+' '+dev+(pct!==null?' ('+(pct>0?'+':'')+pct+'%)':''), 'font-weight:700;color:'+coul)}
+    </div>`;
+}
+/* ============================================================
+   SITUATION DES ACHATS PAR DATE
+   (les « soldes reportés » créés à la clôture sont exclus :
+    ce sont des dettes reprises, pas de nouveaux achats)
+   ============================================================ */
+function achatsParJour(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  const map = {};
+  for(const a of DB.achats){
+    if(a.reporte) continue;
+    if(!dans(a.date)) continue;
+    if(!map[a.date]) map[a.date] = { date:a.date, total:0, paye:0, nb:0, lignes:[] };
+    const j = map[a.date];
+    j.total += Number(a.prixGlobal)||0;
+    j.paye  += Number(a.montantPaye)||0;
+    j.nb++;
+    j.lignes.push(a);
+  }
+  return Object.values(map)
+    .map(j=>({ ...j, credit: Math.max(0, j.total - j.paye) }))
+    .sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function achatsParFournisseur(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  const map = {};
+  for(const a of DB.achats){
+    if(a.reporte) continue;
+    if(!dans(a.date)) continue;
+    const nom = (a.fournisseur||'').trim() || 'Divers';
+    if(!map[nom]) map[nom] = { nom, total:0, nb:0 };
+    map[nom].total += Number(a.prixGlobal)||0;
+    map[nom].nb++;
+  }
+  return Object.values(map).sort((a,b)=> b.total - a.total);
+}
+
+function setAchatsPeriode(p){ window._achatsPeriode = p; go('achatsjour'); }
+
+function pageAchatsJour(){
+  const p = window._achatsPeriode || 'mois';
+  const ref = auj();
+  let per = {debut:null, fin:null}, titre = 'Depuis le début';
+  if(p==='jour'){ per = periodeJour(ref); titre = "Aujourd'hui"; }
+  else if(p==='semaine'){ per = periodeSemaine(ref); titre = 'Cette semaine'; }
+  else if(p==='mois'){ per = periodeMois(ref); titre = 'Ce mois'; }
+  const dev = DB.parametres.devise;
+  const jours = achatsParJour(per.debut, per.fin);
+  const parF = achatsParFournisseur(per.debut, per.fin);
+  let total=0, paye=0, credit=0, nb=0;
+  jours.forEach(j=>{ total+=j.total; paye+=j.paye; credit+=j.credit; nb+=j.nb; });
+  return `
+  <div class="page">
+    <div class="page-title">📆 Achats par date</div>
+    <div class="page-sub">Ce que vous avez acheté, jour par jour, avec ce qui reste à payer.</div>
+
+    <div class="seg" style="margin-bottom:16px">
+      <button type="button" class="${p==='jour'?'on':''}" onclick="setAchatsPeriode('jour')">Jour</button>
+      <button type="button" class="${p==='semaine'?'on':''}" onclick="setAchatsPeriode('semaine')">Semaine</button>
+      <button type="button" class="${p==='mois'?'on':''}" onclick="setAchatsPeriode('mois')">Mois</button>
+      <button type="button" class="${p==='tout'?'on':''}" onclick="setAchatsPeriode('tout')">Tout</button>
+    </div>
+
+    <div class="metrics" style="margin-bottom:8px">
+      <div class="metric accent"><div class="m-label">Achats (${titre})</div><div class="m-value mono">${fmt(total)} ${dev}</div></div>
+      <div class="metric ${credit>0?'danger':''}"><div class="m-label">Reste à payer</div><div class="m-value mono">${fmt(credit)} ${dev}</div></div>
+    </div>
+    <div class="hint" style="margin-bottom:16px;text-align:center">${nb} achat(s) • déjà payé ${fmt(paye)} ${dev}</div>
+
+    ${jours.length===0 ? `
+      <div class="empty"><div class="e-ic">📆</div><div>Aucun achat sur la période</div>
+      <div style="font-size:13px;margin-top:6px">Changez de période ci-dessus, ou enregistrez un achat</div></div>
+    ` : `
+    <div class="card" style="margin-bottom:14px">
+      <div class="hint" style="margin-bottom:10px">Touchez un jour pour voir le détail.</div>
+      <table class="tbl" style="font-size:12.5px">
+        <tr><th>Date</th><th class="num">Achats</th><th class="num">Payé</th><th class="num">Reste</th></tr>
+        ${jours.map(j=>`<tr onclick="openJourAchatsSheet('${j.date}')" style="cursor:pointer">
+          <td>${dateFr(j.date)}<div class="cat-meta">${j.nb} achat(s)</div></td>
+          <td class="num" style="font-weight:700">${fmt(j.total)}</td>
+          <td class="num" style="color:var(--vert)">${fmt(j.paye)}</td>
+          <td class="num" style="font-weight:${j.credit>0?'700':'400'};color:${j.credit>0?'var(--rouge)':'var(--texte-doux)'}">${j.credit>0?fmt(j.credit):'—'}</td>
+        </tr>`).join('')}
+      </table>
+    </div>
+
+    ${parF.length ? `<div class="card">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">🏢 Par fournisseur (${titre.toLowerCase()})</div>
+      ${parF.map(f=>`<div class="cat-row">
+        <div class="cat-info"><div class="cat-name" style="font-size:14px">${f.nom}</div>
+        <div class="cat-meta">${f.nb} achat(s)</div></div>
+        <span style="font-weight:700">${fmt(f.total)} ${dev}</span>
+      </div>`).join('')}
+    </div>` : ''}
+    `}
+  </div>`;
+}
+
+function openJourAchatsSheet(date){
+  const j = achatsParJour(date, date)[0];
+  if(!j) return;
+  const dev = DB.parametres.devise;
+  const lignes = [...j.lignes].sort((a,b)=> (Number(b.prixGlobal)||0) - (Number(a.prixGlobal)||0));
+  sheet(`
+    <h2>📆 ${dateFr(date)}</h2>
+    <div class="s-sub">${j.nb} achat(s) ce jour-là.</div>
+    <div class="metrics" style="margin-bottom:14px">
+      <div class="metric accent"><div class="m-label">Total acheté</div><div class="m-value mono">${fmt(j.total)} ${dev}</div></div>
+      <div class="metric ${j.credit>0?'danger':''}"><div class="m-label">Reste à payer</div><div class="m-value mono">${fmt(j.credit)} ${dev}</div></div>
+    </div>
+    <div class="card">
+      ${lignes.map(a=>{
+        const cat = DB.categories.find(c=>c.id===a.categorieId);
+        const reste = (Number(a.prixGlobal)||0) - (Number(a.montantPaye)||0);
+        return `<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${a.produit}</div>
+          <div class="cat-meta">${a.fournisseur||'Divers'}${cat?' • '+cat.nom:''}${a.quantite?' • '+fmt(a.quantite)+' u.':''}</div></div>
+          <div style="text-align:right">
+            <div style="font-weight:700">${fmt(a.prixGlobal)}</div>
+            <div class="cat-meta" style="color:${reste>0?'var(--rouge)':'var(--vert)'}">${reste>0?'reste '+fmt(reste):'payé ✓'}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
 </script>
 </body>
 </html>
