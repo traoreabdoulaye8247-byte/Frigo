@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="22-07-2026 v11 (Hors connexion ✓)">
+<meta name="frigo-version" content="22-07-2026 v12 (Versements = contrôle seulement ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -1173,11 +1173,9 @@ function mouvementsCaisse(){
         libelle:'Ventes inventaire', montant: inv.totalCA, ref: inv.id });
     }
   }
-  // Versements
-  for(const v of DB.versements){
-    mvts.push({ date: v.date, heure:'', type:'versement', sens:'+',
-      libelle:'Versement'+(v.note?' — '+v.note:''), montant: v.montant, ref: v.id });
-  }
+  // Versements du vendeur : volontairement PAS comptés dans la caisse.
+  // Les ventes de l'inventaire y entrent déjà ; les ajouter compterait
+  // le même argent deux fois. Ils servent uniquement au « Contrôle vendeur ».
   // Paiements fournisseurs
   for(const p of DB.paiements){
     const f = DB.fournisseurs.find(x=>x.id===p.fournisseurId);
@@ -1233,9 +1231,10 @@ function detailCaisse(){  const depart = DB.soldeDepartCaisse || 0;
   let versements = 0; for(const v of DB.versements) versements += v.montant;
   let regularisations = 0; for(const rc of (DB.regularisationsCaisse||[])) regularisations += rc.ecart;
   let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
-  // Solde hors ventes = départ + versements − fournisseurs − dépenses − remboursements ± régul
+  // Solde hors ventes = départ − fournisseurs − dépenses − remboursements − épargne ± régul
+  // (les versements du vendeur n'entrent pas ici : voir « Contrôle vendeur »)
   let epargneNette = 0; for(const e of (DB.epargne||[])) epargneNette += (e.sens==='retrait' ? -e.montant : e.montant);
-  const soldeHorsVentes = depart + versements - fournisseurs - depenses - remboursements - epargneNette + regularisations;
+  const soldeHorsVentes = depart - fournisseurs - depenses - remboursements - epargneNette + regularisations;
   const soldeTotal = soldeHorsVentes + ventes;
   return { depart, versements, fournisseurs, depenses, remboursements, epargneNette, regularisations, soldeHorsVentes, ventes, soldeTotal };
 }
@@ -2289,6 +2288,7 @@ function pageAchats(){
   <div class="page">
     <div class="page-title">Achats</div>
     <div class="page-sub">Enregistrez ce qui entre au frigo.</div>
+    <div class="hint" style="margin-bottom:14px">💰 Argent disponible en caisse : <b>${fmt(soldeCaisse())} ${DB.parametres.devise}</b></div>
 
     <div class="card">
       <div class="btn-group" style="flex-wrap:wrap">
@@ -3160,7 +3160,6 @@ function blocDetailCaisse(){
     <div class="card">
       <div class="card-head"><div class="card-title">🧾 Détail de la caisse</div></div>
       ${ligne('Argent de départ', d.depart, '+')}
-      ${ligne('Versements du vendeur', d.versements, '+v')}
       ${ligne('Paiements fournisseurs', d.fournisseurs, '-')}
       ${ligne('Dépenses', d.depenses, '-')}
       ${ligne('Remboursements emprunt', d.remboursements, '-')}
@@ -3177,6 +3176,12 @@ function blocDetailCaisse(){
         <span>SOLDE EN CAISSE</span>
         <span style="color:var(--givre);font-variant-numeric:tabular-nums">${fmt(d.soldeTotal)} ${dev}</span>
       </div>
+      ${d.versements ? `<div style="border-top:1px dashed var(--bord);margin:10px 0 6px"></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px">
+        <span style="color:var(--texte-faible)">Versements du vendeur</span>
+        <span style="color:var(--texte-faible);font-variant-numeric:tabular-nums">${fmt(d.versements)} ${dev}</span>
+      </div>
+      <div class="hint" style="margin-top:4px;font-size:11.5px">Non ajoutés à la caisse : les ventes y entrent déjà. Ils servent au « Contrôle vendeur ».</div>` : ''}
     </div>`;
 }
 
@@ -3685,7 +3690,7 @@ function openDepenseSheet(){
 function openVersementSheet(){
   sheet(`
     <h2>💵 Versement du vendeur</h2>
-    <div class="s-sub">Argent remis par le vendeur (entre en caisse)</div>
+    <div class="s-sub">Argent remis par le vendeur. Il sert à le contrôler (comparaison avec les ventes) et n'est pas ajouté à la caisse : les ventes de l'inventaire y entrent déjà.</div>
     <div class="field"><label>Montant</label><input class="input" id="vMontant" type="number" inputmode="numeric" placeholder="0"></div>
     <div class="field"><label>Note (optionnel)</label><input class="input" id="vNote" placeholder="Ex: recette de la semaine"></div>
     <div class="field"><label>Date</label><input class="input" id="vDate" type="date" value="${auj()}"></div>
@@ -3727,6 +3732,7 @@ function openFournisseurSheet(fId){
     <div class="field">
       <label>Payer ce fournisseur</label>
       <input class="input" id="payMontant" type="number" inputmode="numeric" placeholder="Montant à payer" max="${f.solde}">
+      <div class="hint" style="margin-top:5px">💰 Disponible en caisse : <b>${fmt(soldeCaisse())} ${DB.parametres.devise}</b></div>
     </div>
     <div class="field">
       <label>Date du paiement</label>
