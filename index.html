@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="22-07-2026 v7 (Achats par date ✓)">
+<meta name="frigo-version" content="22-07-2026 v11 (Hors connexion ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -75,7 +75,7 @@ body.no-scroll{overflow:hidden}
   box-shadow:0 12px 30px rgba(94,234,212,.3);
   transform:rotate(-6deg);
 }
-.brand h1{font-family:'Sora';font-weight:800;font-size:26px;letter-spacing:-.5px;margin-top:8px}
+.brand h1{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:800;font-size:26px;letter-spacing:-.5px;margin-top:8px}
 .brand p{color:var(--texte-doux);font-size:13px;font-weight:500}
 
 /* ---------- COMPOSANTS ---------- */
@@ -96,7 +96,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 
 .btn{
   width:100%;padding:14px 18px;border:none;border-radius:var(--r-s);
-  font-family:'Sora';font-weight:700;font-size:15px;cursor:pointer;
+  font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:700;font-size:15px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;gap:8px;
   transition:transform .12s, filter .15s, background .15s;
 }
@@ -121,14 +121,14 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .topbar .tb-left{display:flex;align-items:center;gap:11px}
 .tb-logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:20px;
   background:linear-gradient(145deg,var(--givre-fonce),var(--givre));transform:rotate(-6deg)}
-.tb-title{font-family:'Sora';font-weight:700;font-size:16px;line-height:1.1}
+.tb-title{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:700;font-size:16px;line-height:1.1}
 .tb-sub{font-size:11px;color:var(--texte-doux)}
-.tb-date{font-family:'JetBrains Mono';font-size:12px;color:var(--givre);font-weight:700;
+.tb-date{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:12px;color:var(--givre);font-weight:700;
   background:rgba(94,234,212,.08);padding:6px 11px;border-radius:9px;border:1px solid rgba(94,234,212,.18)}
 
 .page{padding:18px;max-width:760px;margin:0 auto;animation:fade .3s ease}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.page-title{font-family:'Sora';font-weight:800;font-size:23px;letter-spacing:-.5px;margin-bottom:4px}
+.page-title{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:800;font-size:23px;letter-spacing:-.5px;margin-bottom:4px}
 .page-sub{color:var(--texte-doux);font-size:13px;margin-bottom:20px}
 
 /* ---------- CARTES MÉTRIQUES ---------- */
@@ -142,8 +142,8 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
   border-radius:50%;background:radial-gradient(circle,rgba(94,234,212,.10),transparent 70%)}
 .metric .m-label{font-size:11px;color:var(--texte-doux);text-transform:uppercase;
   letter-spacing:.7px;font-weight:600;margin-bottom:6px}
-.metric .m-value{font-family:'Sora';font-weight:800;font-size:21px;letter-spacing:-.5px}
-.metric .m-value.mono{font-family:'JetBrains Mono';font-size:19px}
+.metric .m-value{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:800;font-size:21px;letter-spacing:-.5px}
+.metric .m-value.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:19px}
 .metric.accent{border-color:rgba(94,234,212,.35)}
 .metric.accent .m-value{color:var(--givre)}
 .metric.gold{border-color:rgba(251,191,36,.35)}
@@ -154,7 +154,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .card{background:linear-gradient(160deg,var(--nuit-2),var(--ardoise));
   border:1px solid var(--bord);border-radius:var(--r);padding:18px;margin-bottom:16px}
 .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.card-title{font-family:'Sora';font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
+.card-title{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px}
 
 /* ---------- LISTE CATÉGORIES (inventaire) ---------- */
 .cat-row{
@@ -166,12 +166,12 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .cat-info{flex:1;min-width:0}
 .cat-name{font-weight:600;font-size:15px}
-.cat-meta{font-size:12px;color:var(--texte-doux);font-family:'JetBrains Mono'}
+.cat-meta{font-size:12px;color:var(--texte-doux);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
 .cat-input{
   width:84px;padding:11px;text-align:center;
   background:var(--ardoise-2);border:1.5px solid var(--bord);
   border-radius:9px;color:var(--texte);font-size:17px;font-weight:700;
-  font-family:'JetBrains Mono';
+  font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;
 }
 .cat-input:focus{outline:none;border-color:var(--givre)}
 
@@ -181,11 +181,11 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
   letter-spacing:.5px;color:var(--texte-doux);border-bottom:1px solid var(--bord);font-weight:600}
 .tbl td{padding:11px 12px;border-bottom:1px solid rgba(42,56,78,.5)}
 .tbl tr:last-child td{border-bottom:none}
-.tbl .num{font-family:'JetBrains Mono';text-align:right;font-weight:600}
+.tbl .num{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;text-align:right;font-weight:600}
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
 .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
-  font-size:11px;font-weight:700;font-family:'JetBrains Mono'}
+  font-size:11px;font-weight:700;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
 .pill.ok{background:rgba(74,222,128,.13);color:var(--vert)}
 .pill.low{background:rgba(251,146,60,.13);color:var(--orange)}
 .pill.out{background:rgba(248,113,113,.13);color:var(--rouge)}
@@ -231,7 +231,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
   animation:slideUp .28s cubic-bezier(.2,.9,.3,1)}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
 .sheet-handle{width:40px;height:4px;background:var(--bord);border-radius:3px;margin:8px auto 18px}
-.sheet h2{font-family:'Sora';font-weight:700;font-size:19px;margin-bottom:4px}
+.sheet h2{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:700;font-size:19px;margin-bottom:4px}
 .sheet .s-sub{color:var(--texte-doux);font-size:13px;margin-bottom:20px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .btn-group{display:flex;gap:10px;margin-top:8px}
@@ -255,7 +255,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 
 .divider{height:1px;background:var(--bord);margin:16px 0}
 .hint{font-size:12px;color:var(--texte-faible);margin-top:6px}
-.big-total{font-family:'Sora';font-weight:800;font-size:28px;color:var(--givre);
+.big-total{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:800;font-size:28px;color:var(--givre);
   font-feature-settings:'tnum';letter-spacing:-1px}
 .swipe-x{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
 .chip{white-space:nowrap;padding:7px 13px;border-radius:20px;font-size:13px;font-weight:600;
@@ -394,6 +394,9 @@ function migrerDB(){
   if(!DB.regularisationsCaisse) DB.regularisationsCaisse = [];
   if(!DB.archivesSemaines) DB.archivesSemaines = [];
   if(!DB.ventesJour) DB.ventesJour = [];
+  if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = [];
+  if(!DB.epargne) DB.epargne = [];
+  if(DB.epargneReportee == null) DB.epargneReportee = 0;
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   // seuil d'alerte par catégorie (défaut 15)
   DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
@@ -410,15 +413,34 @@ function migrerDB(){
       }
     }
   }
+  // Réparation : un achat ne peut jamais être payé plus que son montant
+  // (sinon le fournisseur devient négatif et fausse discrètement le total à payer)
+  if(DB.achats){
+    for(const a of DB.achats){
+      const px = Number(a.prixGlobal)||0;
+      let py = Number(a.montantPaye)||0;
+      if(py < 0) py = 0;
+      if(py > px) py = px;
+      a.montantPaye = py;
+    }
+  }
 }
 
+let _dernierBackupTs = 0;
+let _sauvegardeEnPause = false;   // pour les opérations groupées (import)
 function sauverDB(){
+  if(_sauvegardeEnPause) return;  // on enregistrera une seule fois à la fin
   const data = JSON.stringify(DB);
   try{
     localStorage.setItem(DB_KEY, data);
-    // Copie de secours (2e emplacement) + horodatage
-    localStorage.setItem(DB_KEY + '_backup', data);
     localStorage.setItem(DB_KEY + '_time', new Date().toISOString());
+    // Copie de secours : au plus une fois toutes les 30 s.
+    // (l'écrire à chaque saisie doublait le travail et ralentissait l'application)
+    const maintenant = Date.now();
+    if(maintenant - _dernierBackupTs > 30000){
+      localStorage.setItem(DB_KEY + '_backup', data);
+      _dernierBackupTs = maintenant;
+    }
   }catch(e){
     console.warn('Erreur sauvegarde', e);
   }
@@ -790,14 +812,20 @@ function analyserCSVAchats(texte){
 /* Importer réellement les lignes analysées -> crée les achats */
 function importerAchats(lignes){
   let n = 0;
-  for(const l of lignes){
-    ajouterAchat({
-      date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom,
-      categorieId: l.categorieId, cartons: l.cartons, contenu: l.contenu,
-      prixGlobal: l.prixGlobal,
-      montantPaye: l.paiement==='tout' ? l.prixGlobal : (l.paiement==='partiel' ? l.montantPartiel : 0)
-    });
-    n++;
+  _sauvegardeEnPause = true;   // on n'enregistre pas à chaque ligne
+  try{
+    for(const l of lignes){
+      ajouterAchat({
+        date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom,
+        categorieId: l.categorieId, cartons: l.cartons, contenu: l.contenu,
+        prixGlobal: l.prixGlobal,
+        montantPaye: l.paiement==='tout' ? l.prixGlobal : (l.paiement==='partiel' ? l.montantPartiel : 0)
+      });
+      n++;
+    }
+  } finally {
+    _sauvegardeEnPause = false;
+    sauverDB();               // une seule écriture pour tout l'import
   }
   return n;
 }
@@ -891,12 +919,22 @@ function enregistrerPaiement({date, fournisseurId, achatId, montant, note}){
 }
 
 /* Solde dû à un fournisseur = total achats − total payé */
-function soldeFournisseur(fournisseurId){
+function soldeFournisseurBrut(fournisseurId){
   let du = 0;
   for(const a of DB.achats){
-    if(a.fournisseurId===fournisseurId) du += a.prixGlobal - (a.montantPaye||0);
+    if(a.fournisseurId===fournisseurId){
+      du += Math.max(0, (Number(a.prixGlobal)||0) - (Number(a.montantPaye)||0));
+    }
   }
-  return du;
+  return du + ajustementFournisseur(fournisseurId);
+}
+function ajustementFournisseur(fournisseurId){
+  let t = 0;
+  for(const r of (DB.regularisationsFournisseur||[])){ if(r.fournisseurId===fournisseurId) t += r.ecart; }
+  return t;
+}
+function soldeFournisseur(fournisseurId){
+  return Math.max(0, soldeFournisseurBrut(fournisseurId));
 }
 
 /* Infos complètes d'un fournisseur */
@@ -905,14 +943,16 @@ function infosFournisseur(fournisseurId){
   if(!f) return null;
   const achats = DB.achats.filter(a=>a.fournisseurId===fournisseurId);
   const paiements = DB.paiements.filter(p=>p.fournisseurId===fournisseurId);
-  const totalAchats = achats.reduce((s,a)=>s+a.prixGlobal,0);
-  const totalPaye = achats.reduce((s,a)=>s+(a.montantPaye||0),0);
+  const regularisations = (DB.regularisationsFournisseur||[]).filter(r=>r.fournisseurId===fournisseurId);
+  const totalAchats = achats.reduce((s,a)=>s+(Number(a.prixGlobal)||0),0);
+  const totalPaye = achats.reduce((s,a)=>s+Math.min(Number(a.montantPaye)||0, Number(a.prixGlobal)||0),0);
   return {
     ...f,
     nbAchats: achats.length,
     totalAchats, totalPaye,
-    solde: totalAchats - totalPaye,
-    achats, paiements
+    ajustement: ajustementFournisseur(fournisseurId),
+    solde: soldeFournisseur(fournisseurId),
+    achats, paiements, regularisations
   };
 }
 
@@ -1155,6 +1195,12 @@ function mouvementsCaisse(){
     mvts.push({ date: r.date, heure:'', type:'remboursement', sens:'-',
       libelle:'Remboursement emprunt'+(e?' — '+e.preteur:''), montant: r.montant, ref: r.id });
   }
+  // Épargne : mise de côté = sortie de caisse, retrait = retour en caisse
+  for(const e of (DB.epargne||[])){
+    mvts.push({ date: e.date, heure:'', type:'epargne', sens: e.sens==='retrait' ? '+' : '-',
+      libelle: (e.sens==='retrait' ? 'Retrait d\'épargne' : 'Mise de côté (épargne)') + (e.note ? ' — '+e.note : ''),
+      montant: e.montant, ref: e.id });
+  }
   // Régularisations de caisse (correction du solde : +/- selon l'écart)
   for(const rc of (DB.regularisationsCaisse||[])){
     mvts.push({ date: rc.date, heure:'zzz', type:'regulCaisse', sens: rc.ecart>=0?'+':'-',
@@ -1188,9 +1234,10 @@ function detailCaisse(){  const depart = DB.soldeDepartCaisse || 0;
   let regularisations = 0; for(const rc of (DB.regularisationsCaisse||[])) regularisations += rc.ecart;
   let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
   // Solde hors ventes = départ + versements − fournisseurs − dépenses − remboursements ± régul
-  const soldeHorsVentes = depart + versements - fournisseurs - depenses - remboursements + regularisations;
+  let epargneNette = 0; for(const e of (DB.epargne||[])) epargneNette += (e.sens==='retrait' ? -e.montant : e.montant);
+  const soldeHorsVentes = depart + versements - fournisseurs - depenses - remboursements - epargneNette + regularisations;
   const soldeTotal = soldeHorsVentes + ventes;
-  return { depart, versements, fournisseurs, depenses, remboursements, regularisations, soldeHorsVentes, ventes, soldeTotal };
+  return { depart, versements, fournisseurs, depenses, remboursements, epargneNette, regularisations, soldeHorsVentes, ventes, soldeTotal };
 }
 
 // ============================================================
@@ -1209,6 +1256,7 @@ function resumeSemaineActuelle(){
   let valeurStock = 0; for(const c of DB.categories){ const s = stockCategorie(c.id); if(s>0) valeurStock += s*c.prix; }
   return {
     dateDebut, dateFin, ventes, achats, depenses, ventesSaisies,
+    epargne: totalEpargne(),
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
     cafeSoldeTotal: cafe.soldeTotal,
@@ -1244,6 +1292,7 @@ function rapportSemaineTexte(r){
   L.push('——————————————');
   L.push('💰 Caisse en fin de semaine : ' + fmt(r.soldeCaisseFin) + ' ' + dev);
   L.push('📦 Valeur du stock : ' + fmt(r.valeurStock) + ' ' + dev);
+  if(r.epargne) L.push('🐖 Épargne mise de côté : ' + fmt(r.epargne) + ' ' + dev);
   if(r.detteFournisseurs>0) L.push('🏢 Reste à payer fournisseurs : ' + fmt(r.detteFournisseurs) + ' ' + dev);
   if(r.creancesClients>0) L.push('👥 Clients me doivent : ' + fmt(r.creancesClients) + ' ' + dev);
   if(r.detteEmprunts>0) L.push('🏦 Reste emprunts : ' + fmt(r.detteEmprunts) + ' ' + dev);
@@ -1287,6 +1336,9 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.regularisations = [];
   DB.regularisationsCaisse = [];
   DB.ventesJour = [];
+  // Épargne : le total mis de côté est reporté sur la nouvelle semaine
+  DB.epargneReportee = totalEpargne();
+  DB.epargne = [];
   // Café : reporter le solde (à-nouveau) avant d'effacer l'activité de la semaine
   {
     let cv = 0, ca = 0;
@@ -1729,6 +1781,9 @@ function restaurerCorbeille(id){
   else if(item.type==='paiementClient'){ DB.paiementsClients.push(d); }
   else if(item.type==='regularisation'){ DB.regularisations.push(d); }
   else if(item.type==='emprunt'){ if(d.emprunt){ DB.emprunts.push(d.emprunt); (d.remboursements||[]).forEach(r=>DB.remboursementsEmprunt.push(r)); } }
+  else if(item.type==='fournisseur'){ DB.fournisseurs.push(d); }
+  else if(item.type==='regulFournisseur'){ if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = []; DB.regularisationsFournisseur.push(d); }
+  else if(item.type==='epargne'){ if(!DB.epargne) DB.epargne = []; DB.epargne.push(d); }
   else if(item.type==='venteJour'){ if(!DB.ventesJour) DB.ventesJour = []; DB.ventesJour.push(d); }
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
   else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
@@ -1903,12 +1958,12 @@ function renderLogin(){
       <div class="field">
         <label>${aPin ? 'Code PIN' : 'Nouveau code PIN (4 chiffres)'}</label>
         <input class="input" id="pinInput" type="password" inputmode="numeric"
-          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono'">
+          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace">
       </div>
       ${!aPin ? `<div class="field">
         <label>Confirmez le code</label>
         <input class="input" id="pinConfirm" type="password" inputmode="numeric"
-          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono'">
+          maxlength="4" placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:24px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace">
       </div>` : ''}
       <button class="btn btn-primary" id="loginBtn" style="margin-top:8px">
         ${aPin ? 'Déverrouiller' : 'Créer mon accès'} →
@@ -2030,6 +2085,7 @@ function go(page){
   else if(page==='cafe') { c.innerHTML = pageCafe(); }
   else if(page==='ventesjour') { c.innerHTML = pageVentesJour(); }
   else if(page==='achatsjour') { c.innerHTML = pageAchatsJour(); }
+  else if(page==='epargne') { c.innerHTML = pageEpargne(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
@@ -2080,6 +2136,7 @@ function pageAccueil(){
     </div>
 
     ${blocAlerteSauvegarde()}
+    ${blocTableauBord()}
     ${blocDetailCaisse()}
     <button class="btn btn-ghost" onclick="go('caisse')" style="margin-bottom:16px">💰 Ouvrir la caisse</button>
 
@@ -2515,6 +2572,7 @@ function pagePlus(){
       </div>
       <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-top:10px">📅 Ventes journalières</button>
       <button class="btn btn-ghost" onclick="go('achatsjour')" style="margin-top:10px">📆 Achats par date</button>
+      <button class="btn btn-ghost" onclick="go('epargne')" style="margin-top:10px">🐖 Mon épargne</button>
       <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
       <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
     </div>
@@ -3106,6 +3164,7 @@ function blocDetailCaisse(){
       ${ligne('Paiements fournisseurs', d.fournisseurs, '-')}
       ${ligne('Dépenses', d.depenses, '-')}
       ${ligne('Remboursements emprunt', d.remboursements, '-')}
+      ${d.epargneNette ? ligne('Mis de côté (épargne)', d.epargneNette, '-') : ''}
       ${ligne('Régularisations', d.regularisations, 'reg')}
       <div style="border-top:1px solid var(--bord);margin:8px 0"></div>
       <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:700">
@@ -3360,13 +3419,13 @@ function openChangePinSheet(){
     <div class="s-sub">Entrez votre code actuel, puis le nouveau code.</div>
     <div class="field"><label>Code actuel</label>
       <input class="input" id="pinOld" type="password" inputmode="numeric" maxlength="4"
-        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace"></div>
     <div class="field"><label>Nouveau code (4 chiffres)</label>
       <input class="input" id="pinNew" type="password" inputmode="numeric" maxlength="4"
-        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace"></div>
     <div class="field"><label>Confirmer le nouveau code</label>
       <input class="input" id="pinConf" type="password" inputmode="numeric" maxlength="4"
-        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono'"></div>
+        placeholder="••••" style="text-align:center;letter-spacing:10px;font-size:22px;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace"></div>
     <div class="btn-group" style="margin-top:8px">
       <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
       <button class="btn btn-primary" id="pinSave">Enregistrer</button>
@@ -3681,6 +3740,21 @@ function openFournisseurSheet(fId){
     ` : `<div class="card" style="background:rgba(74,222,128,.08);border-color:var(--vert);margin-bottom:12px">
       <div style="text-align:center;color:var(--vert);font-weight:700">✓ Ce fournisseur est entièrement payé</div>
     </div>`}
+
+    <div class="btn-group" style="flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-ghost btn-sm" onclick="openRenommerFournisseurSheet('${fId}')">✏️ Renommer</button>
+      <button class="btn btn-ghost btn-sm" onclick="openRegulFournisseurSheet('${fId}')">⚖️ Régulariser le solde</button>
+      ${f.nbAchats===0 ? `<button class="btn btn-danger btn-sm" onclick="supprFournisseurUI('${fId}')">🗑️ Supprimer</button>` : ''}
+    </div>
+
+    ${f.regularisations.length ? `<div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">⚖️ Régularisations</div>
+      ${f.regularisations.slice().reverse().map(r=>`<div class="cat-row">
+        <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(r.ancienSolde)} → ${fmt(r.nouveauSolde)}</div>
+        <div class="cat-meta">${dateFr(r.date)} • ${r.motif} • par ${r.user}</div></div>
+        <button class="btn btn-sm btn-ghost" onclick="supprRegulFournisseurUI('${r.id}')">🗑️</button>
+      </div>`).join('')}
+    </div>` : ''}
 
     <div class="card-title" style="font-size:14px;margin-bottom:8px">📥 Achats</div>
     <div class="tbl-wrap" style="margin-bottom:16px"><table class="tbl">
@@ -4938,9 +5012,18 @@ async function verifierMiseAJour(){
   try{
     if(location.protocol === 'file:') return 'impossible';
     const url = location.pathname + '?maj=' + Date.now();   // requête unique = cache contourné
-    const r = await fetch(url, {cache:'no-store'});
-    if(!r.ok) return 'impossible';
-    const txt = await r.text();
+    let txt = '';
+    // On ne télécharge que les 3 premiers Ko : la version est tout en haut du fichier.
+    // (avant, on téléchargeait les 358 Ko de l'application à chaque vérification)
+    try{
+      const r = await fetch(url, {cache:'no-store', headers:{'Range':'bytes=0-3071'}});
+      if(r.ok || r.status === 206) txt = await r.text();
+    }catch(e){}
+    if(txt.indexOf('frigo-version') < 0){   // serveur qui ne gère pas les extraits : on reprend tout
+      const r2 = await fetch(url, {cache:'no-store'});
+      if(!r2.ok) return 'impossible';
+      txt = await r2.text();
+    }
     const m = txt.match(/frigo-version" content="([^"]+)"/);
     if(!m || !m[1]) return 'impossible';
     if(m[1] !== versionApp()){ afficherBandeauMAJ(m[1]); return 'nouvelle'; }
@@ -4958,16 +5041,18 @@ function afficherBandeauMAJ(nouvelleVersion){
   document.body.appendChild(b);
 }
 
-function appliquerMiseAJour(){
+async function appliquerMiseAJour(){
   // instantané de sécurité des données juste avant la mise à jour
   try{ localStorage.setItem('frigo_backup_avant_maj', JSON.stringify({date: new Date().toISOString(), version: versionApp(), db: DB})); }catch(e){}
+  // vider la mémoire hors connexion pour bien charger la nouvelle version
+  try{ if(window.caches) await caches.delete('frigo-app-v1'); }catch(e){}
   location.href = location.pathname + '?v=' + Date.now();   // rechargement version fraîche, données intactes
 }
 
 let _derniereVerifMaj = 0;
 function verifierMajSiBesoin(){
   const t = Date.now();
-  if(t - _derniereVerifMaj < 10*60*1000) return;   // au plus une fois toutes les 10 min
+  if(t - _derniereVerifMaj < 30*60*1000) return;   // au plus une fois toutes les 30 min
   _derniereVerifMaj = t;
   verifierMiseAJour();
 }
@@ -4979,7 +5064,7 @@ async function verifierMiseAJourManuelle(){
 }
 try{
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') verifierMajSiBesoin(); });
-  setTimeout(verifierMajSiBesoin, 2500);   // première vérification après le démarrage
+  setTimeout(verifierMajSiBesoin, 8000);   // après le démarrage, sans gêner l'affichage
 }catch(e){}
 /* ============================================================
    VENTES JOURNALIÈRES (à partir des inventaires)
@@ -5428,6 +5513,330 @@ function openJourAchatsSheet(date){
     <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
   `);
 }
+/* ============================================================
+   FOURNISSEURS : renommer / fusionner / supprimer / régulariser
+   ============================================================ */
+function renommerFournisseur(fId, nouveauNom){
+  const f = DB.fournisseurs.find(x=>x.id===fId);
+  if(!f) return null;
+  const nom = (nouveauNom||'').trim();
+  if(!nom) return null;
+  const existant = DB.fournisseurs.find(x=>x.id!==fId && (x.nom||'').toLowerCase() === nom.toLowerCase());
+  if(existant){
+    // même nom qu'un autre compte : on fusionne tout dessus (rien n'est perdu)
+    for(const a of DB.achats){ if(a.fournisseurId===fId){ a.fournisseurId = existant.id; a.fournisseur = existant.nom; } }
+    for(const p of DB.paiements){ if(p.fournisseurId===fId) p.fournisseurId = existant.id; }
+    for(const r of (DB.regularisationsFournisseur||[])){ if(r.fournisseurId===fId) r.fournisseurId = existant.id; }
+    DB.fournisseurs = DB.fournisseurs.filter(x=>x.id!==fId);
+    sauverDB();
+    return { fusion:true, vers: existant };
+  }
+  f.nom = nom;
+  for(const a of DB.achats){ if(a.fournisseurId===fId) a.fournisseur = nom; }
+  sauverDB();
+  return { fusion:false, fournisseur:f };
+}
+
+function supprimerFournisseur(fId){
+  const f = DB.fournisseurs.find(x=>x.id===fId);
+  if(!f) return false;
+  if(DB.achats.some(a=>a.fournisseurId===fId)) return false;   // sécurité : on ne perd aucun achat
+  versCorbeille('fournisseur', f, 'Fournisseur : '+f.nom);
+  DB.fournisseurs = DB.fournisseurs.filter(x=>x.id!==fId);
+  DB.paiements = DB.paiements.filter(p=>p.fournisseurId!==fId);
+  DB.regularisationsFournisseur = (DB.regularisationsFournisseur||[]).filter(r=>r.fournisseurId!==fId);
+  sauverDB();
+  return true;
+}
+
+/* Aligner le compte sur ce qui est réellement dû, sans toucher aux achats ni aux paiements */
+function regulariserFournisseur({fournisseurId, montantReel, motif, user, date}){
+  const f = DB.fournisseurs.find(x=>x.id===fournisseurId);
+  if(!f) return null;
+  const reel = Number(montantReel);
+  if(isNaN(reel) || reel < 0) return null;
+  const brut = soldeFournisseurBrut(fournisseurId);
+  const ecart = reel - brut;
+  if(ecart === 0) return null;
+  if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = [];
+  const r = {
+    id: uid('rf'), date: date||auj(), fournisseurId,
+    ancienSolde: Math.max(0, brut), nouveauSolde: reel, ecart,
+    motif: (motif||'').trim() || 'Non précisé',
+    user: (user||'').trim() || 'Gérant'
+  };
+  DB.regularisationsFournisseur.push(r);
+  sauverDB();
+  return r;
+}
+function supprimerRegulFournisseur(id){
+  const r = (DB.regularisationsFournisseur||[]).find(x=>x.id===id);
+  if(r) versCorbeille('regulFournisseur', r, 'Régularisation fournisseur du '+dateFr(r.date));
+  DB.regularisationsFournisseur = (DB.regularisationsFournisseur||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+
+function openRenommerFournisseurSheet(fId){
+  const f = DB.fournisseurs.find(x=>x.id===fId);
+  if(!f) return;
+  const autres = DB.fournisseurs.filter(x=>x.id!==fId).map(x=>x.nom).join(', ');
+  sheet(`
+    <h2>✏️ Renommer le fournisseur</h2>
+    <div class="s-sub">Corrigez le nom. Si vous saisissez le nom d'un fournisseur déjà existant, les deux comptes seront fusionnés (rien n'est perdu).</div>
+    <div class="field"><label>Nom du fournisseur</label>
+      <input class="input" id="fNom" value="${(f.nom||'').replace(/"/g,'&quot;')}"></div>
+    <div class="hint" style="margin-bottom:12px">Fournisseurs existants : ${autres || 'aucun'}</div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="openFournisseurSheet('${fId}')">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerRenommerFournisseur('${fId}')">Enregistrer</button>
+    </div>
+  `);
+}
+function validerRenommerFournisseur(fId){
+  const nom = ($('#fNom').value||'').trim();
+  if(!nom){ toast('Indiquez le nom','err'); return; }
+  const res = renommerFournisseur(fId, nom);
+  if(!res){ toast('Impossible de renommer','err'); return; }
+  toast(res.fusion ? 'Comptes fusionnés sur '+res.vers.nom+' ✓' : 'Nom modifié ✓');
+  closeSheet();
+  go('fournisseurs');
+}
+
+function openRegulFournisseurSheet(fId){
+  const f = infosFournisseur(fId);
+  if(!f) return;
+  const dev = DB.parametres.devise;
+  sheet(`
+    <h2>⚖️ Régulariser le solde</h2>
+    <div class="s-sub">Alignez le compte sur ce que vous devez réellement à ${f.nom}. Vos achats et paiements ne sont pas modifiés.</div>
+    <div class="metric accent" style="margin-bottom:14px">
+      <div class="m-label">Solde calculé par FRIGO</div>
+      <div class="m-value mono">${fmt(f.solde)} ${dev}</div>
+    </div>
+    <div class="field"><label>Montant réellement dû (${dev})</label>
+      <input class="input" id="rfMontant" type="number" inputmode="numeric" placeholder="Ex: 0 si le compte est soldé">
+      <div class="hint" style="margin-top:5px">Mettez 0 si vous ne lui devez plus rien.</div></div>
+    <div class="field"><label>Motif</label>
+      <select class="input" id="rfMotif">
+        <option value="Erreur de saisie">Erreur de saisie</option>
+        <option value="Paiement oublié">Paiement oublié</option>
+        <option value="Remise du fournisseur">Remise du fournisseur</option>
+        <option value="Solde d'ouverture">Solde d'ouverture</option>
+        <option value="Autre">Autre</option>
+      </select></div>
+    <div class="field"><label>Régularisé par (votre nom)</label>
+      <input class="input" id="rfUser" placeholder="Ex: Abdoulaye" value="${(DB.parametres && DB.parametres.gerant)||''}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="openFournisseurSheet('${fId}')">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerRegulFournisseur('${fId}')">✅ Régulariser</button>
+    </div>
+  `);
+}
+function validerRegulFournisseur(fId){
+  const el = $('#rfMontant');
+  if(!el || el.value===''){ toast('Indiquez le montant réellement dû','err'); return; }
+  const montantReel = Math.max(0, Number(el.value)||0);
+  const motif = $('#rfMotif') ? $('#rfMotif').value : '';
+  const user = $('#rfUser') ? $('#rfUser').value.trim() : '';
+  if(user){ if(!DB.parametres) DB.parametres = {}; DB.parametres.gerant = user; }
+  const r = regulariserFournisseur({fournisseurId:fId, montantReel, motif, user});
+  if(!r){ toast('Le solde est déjà à ce montant','err'); return; }
+  toast('Solde régularisé ✓');
+  closeSheet();
+  go('fournisseurs');
+}
+function supprRegulFournisseurUI(id){
+  supprimerRegulFournisseur(id);
+  toast('Régularisation annulée (dans la corbeille)');
+  closeSheet();
+  go('fournisseurs');
+}
+function supprFournisseurUI(fId){
+  if(supprimerFournisseur(fId)){
+    toast('Fournisseur supprimé (dans la corbeille)');
+    closeSheet();
+    go('fournisseurs');
+  } else {
+    toast('Impossible : ce fournisseur a des achats','err');
+  }
+}
+/* ============================================================
+   ÉPARGNE — l'argent mis de côté
+   Sort de la caisse (ce n'est pas une dépense : l'argent reste à vous)
+   et se reporte d'une semaine à l'autre.
+   ============================================================ */
+function totalEpargne(){
+  let t = Number(DB.epargneReportee)||0;
+  for(const e of (DB.epargne||[])) t += (e.sens==='retrait' ? -e.montant : e.montant);
+  return Math.max(0, t);
+}
+function ajouterEpargne({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  if(!DB.epargne) DB.epargne = [];
+  const e = { id: uid('ep'), date: date||auj(), sens:'depot', montant, note:(note||'').trim() };
+  DB.epargne.push(e);
+  sauverDB();
+  return e;
+}
+function retirerEpargne({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const dispo = totalEpargne();
+  if(dispo<=0) return null;
+  if(montant > dispo) montant = dispo;      // on ne retire pas plus qu'on n'a mis
+  if(!DB.epargne) DB.epargne = [];
+  const e = { id: uid('ep'), date: date||auj(), sens:'retrait', montant, note:(note||'').trim() };
+  DB.epargne.push(e);
+  sauverDB();
+  return e;
+}
+function supprimerMouvementEpargne(id){
+  const e = (DB.epargne||[]).find(x=>x.id===id);
+  if(e) versCorbeille('epargne', e, (e.sens==='retrait'?'Retrait':'Mise de côté')+' épargne du '+dateFr(e.date));
+  DB.epargne = (DB.epargne||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+
+function pageEpargne(){
+  const dev = DB.parametres.devise;
+  const mvts = [...(DB.epargne||[])].sort((a,b)=> a.date<b.date?1:-1);
+  let deposes = 0, retires = 0;
+  for(const e of (DB.epargne||[])){ if(e.sens==='retrait') retires += e.montant; else deposes += e.montant; }
+  const reporte = Number(DB.epargneReportee)||0;
+  return `
+  <div class="page">
+    <div class="page-title">🐖 Mon épargne</div>
+    <div class="page-sub">L'argent que vous mettez de côté. Il sort de la caisse mais reste à vous.</div>
+
+    <div class="metric accent" style="margin-bottom:14px">
+      <div class="m-label">Total mis de côté</div>
+      <div class="m-value mono">${fmt(totalEpargne())} ${dev}</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      ${reporte ? `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">Reporté des semaines passées</span><span style="font-weight:600">${fmt(reporte)} ${dev}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">Mis de côté cette semaine</span><span style="font-weight:600;color:var(--vert)">+${fmt(deposes)} ${dev}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">Repris cette semaine</span><span style="font-weight:600;color:${retires>0?'var(--rouge)':'var(--texte-doux)'}">${retires>0?'−'+fmt(retires):'0'} ${dev}</span></div>
+    </div>
+
+    <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn btn-ambre" onclick="openEpargneSheet('depot')">🐖 Mettre de côté</button>
+      <button class="btn btn-ghost" onclick="openEpargneSheet('retrait')">↩️ Reprendre</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">Mouvements de la semaine</div>
+      ${mvts.length===0 ? '<div class="hint">Aucun mouvement pour le moment</div>' :
+        mvts.map(e=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${e.sens==='retrait'?'↩️ Repris':'🐖 Mis de côté'}</div>
+          <div class="cat-meta">${dateFr(e.date)}${e.note?' • '+e.note:''}</div></div>
+          <span style="font-weight:700;color:${e.sens==='retrait'?'var(--rouge)':'var(--vert)'}">${e.sens==='retrait'?'−':'+'}${fmt(e.montant)}</span>
+          <button class="btn btn-sm btn-ghost" onclick="supprEpargneUI('${e.id}')" style="margin-left:8px">🗑️</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function openEpargneSheet(sens){
+  const dev = DB.parametres.devise;
+  const retrait = (sens==='retrait');
+  sheet(`
+    <h2>${retrait?"↩️ Reprendre de l'épargne":"🐖 Mettre de côté"}</h2>
+    <div class="s-sub">${retrait?"L'argent revient dans votre caisse.":"L'argent sort de la caisse et rejoint votre épargne. Ce n'est pas une dépense."}</div>
+    ${retrait?`<div class="hint" style="margin-bottom:12px">Épargne disponible : <b>${fmt(totalEpargne())} ${dev}</b></div>`:''}
+    <div class="field"><label>Montant (${dev})</label>
+      <input class="input" id="epMontant" type="number" inputmode="numeric" placeholder="Ex: 10000"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="epNote" placeholder="Ex: pour le frigo, économies"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="epDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerEpargne('${retrait?'retrait':'depot'}')">Enregistrer</button>
+    </div>
+  `);
+}
+function validerEpargne(sens){
+  const montant = Number($('#epMontant').value)||0;
+  const note = $('#epNote').value.trim();
+  const date = $('#epDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  const r = (sens==='retrait') ? retirerEpargne({date, montant, note}) : ajouterEpargne({date, montant, note});
+  if(!r){ toast(sens==='retrait' ? 'Votre épargne est vide' : 'Montant invalide','err'); return; }
+  toast(sens==='retrait' ? 'Repris de l\u2019épargne ✓' : 'Mis de côté ✓');
+  closeSheet();
+  go('epargne');
+}
+function supprEpargneUI(id){
+  supprimerMouvementEpargne(id);
+  toast('Supprimé (dans la corbeille)');
+  go('epargne');
+}
+
+/* ============================================================
+   TABLEAU DE BORD (accueil) — achats, ventes, caisse, épargne, café
+   ============================================================ */
+function blocTableauBord(){
+  const dev = DB.parametres.devise;
+  const per = periodeSemaine(auj());
+  const dans = (d)=> d>=per.debut && d<=per.fin;
+  let ventes = 0; for(const inv of DB.inventaires){ if(dans(inv.date)) ventes += inv.totalCA; }
+  const saisi = totalVentesSaisies(per.debut, per.fin);
+  let achats = 0; for(const a of DB.achats){ if(!a.reporte && dans(a.date)) achats += (Number(a.prixGlobal)||0); }
+  const reste = totalDettesFournisseurs();
+  const cafeSem = statsCafe(per.debut, per.fin);
+  const cafeTot = statsCafe();
+  const ligne = (icone, titre, valeur, detail, page, couleur)=>`
+    <div class="cat-row" style="cursor:pointer" onclick="go('${page}')">
+      <div class="cat-info"><div class="cat-name" style="font-size:14px">${icone} ${titre}</div>
+      <div class="cat-meta">${detail}</div></div>
+      <span style="font-weight:700;${couleur?'color:'+couleur:''}">${valeur}</span>
+    </div>`;
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head"><div class="card-title">📊 Tableau de bord — cette semaine</div></div>
+      ${ligne('💵','Ventes', fmt(ventes)+' '+dev, saisi>0 ? 'saisi à la main : '+fmt(saisi)+' '+dev : 'calculé par vos inventaires', 'ventesjour', 'var(--vert)')}
+      ${ligne('🛒','Achats', fmt(achats)+' '+dev, reste>0 ? 'reste à payer : '+fmt(reste)+' '+dev : 'tout est payé ✓', 'achatsjour', reste>0?'var(--texte)':'var(--texte)')}
+      ${ligne('💰','Solde en caisse', fmt(soldeCaisse())+' '+dev, 'argent disponible maintenant', 'caisse', 'var(--givre,#5EEAD4)')}
+      ${ligne('🐖','Épargne', fmt(totalEpargne())+' '+dev, 'mis de côté (hors caisse)', 'epargne', 'var(--ambre)')}
+      ${ligne('☕','Café', fmt(cafeSem.resultat)+' '+dev, 'résultat semaine • solde café : '+fmt(cafeTot.soldeTotal)+' '+dev, 'cafe', cafeSem.resultat<0?'var(--rouge)':'var(--vert)')}
+    </div>`;
+}
+/* ============================================================
+   FONCTIONNEMENT HORS CONNEXION
+   Installe un petit assistant (sw.js) qui garde l'application dans
+   la mémoire du téléphone. Si sw.js n'est pas encore déposé sur le
+   serveur, l'application continue de marcher normalement.
+   ============================================================ */
+try{
+  if('serviceWorker' in navigator && location.protocol === 'https:'){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js').catch(function(){ /* sans assistant, l'app marche quand même */ });
+    });
+  }
+}catch(e){}
+
+function majEtatConnexion(){
+  try{
+    const hors = (navigator.onLine === false);
+    let el = document.getElementById('bandeauHorsLigne');
+    if(hors && !el){
+      el = document.createElement('div');
+      el.id = 'bandeauHorsLigne';
+      el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:78px;z-index:9998;background:#1E293B;border:1px solid #475569;color:#CBD5E1;padding:9px 12px;border-radius:12px;text-align:center;font-size:12.5px;font-weight:600';
+      el.textContent = '📴 Hors connexion — FRIGO fonctionne normalement';
+      document.body.appendChild(el);
+    } else if(!hors && el && el.remove){
+      el.remove();
+    }
+  }catch(e){}
+}
+try{
+  window.addEventListener('online', majEtatConnexion);
+  window.addEventListener('offline', majEtatConnexion);
+  setTimeout(majEtatConnexion, 1200);
+}catch(e){}
 </script>
 </body>
 </html>
