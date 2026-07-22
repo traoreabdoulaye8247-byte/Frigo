@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="22-07-2026 v12 (Versements = contrôle seulement ✓)">
+<meta name="frigo-version" content="22-07-2026 v13 (Contrôle vendeur complet ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -396,6 +396,7 @@ function migrerDB(){
   if(!DB.ventesJour) DB.ventesJour = [];
   if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = [];
   if(!DB.epargne) DB.epargne = [];
+  if(!DB.apportsCaisse) DB.apportsCaisse = [];
   if(DB.epargneReportee == null) DB.epargneReportee = 0;
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   // seuil d'alerte par catégorie (défaut 15)
@@ -1335,6 +1336,7 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.regularisations = [];
   DB.regularisationsCaisse = [];
   DB.ventesJour = [];
+  DB.apportsCaisse = [];
   // Épargne : le total mis de côté est reporté sur la nouvelle semaine
   DB.epargneReportee = totalEpargne();
   DB.epargne = [];
@@ -1451,12 +1453,19 @@ function comparaisonVendeur(debut, fin){
   for(const v of DB.versements){
     if(dansPeriode(v.date)) verse += v.montant;
   }
+  // Argent de la caisse remis au vendeur : il s'ajoute à ce qu'il a encaissé
+  // pour payer les fournisseurs. (N'est pas un mouvement de caisse : la sortie
+  // réelle est déjà enregistrée par le paiement du fournisseur.)
+  let apports = 0;
+  for(const a of (DB.apportsCaisse||[])){
+    if(dansPeriode(a.date)) apports += a.montant;
+  }
 
-  const duParVendeur = ventes - fournisseursPayes - depenses;
+  const duParVendeur = ventes + apports - fournisseursPayes - depenses;
   const ecart = verse - duParVendeur;  // négatif = manque, positif = surplus
 
   return {
-    ventes, fournisseursPayes, depenses, verse,
+    ventes, apports, fournisseursPayes, depenses, verse,
     duParVendeur, ecart,
     statut: ecart===0 ? 'ok' : (ecart<0 ? 'manque' : 'surplus')
   };
@@ -1782,6 +1791,7 @@ function restaurerCorbeille(id){
   else if(item.type==='emprunt'){ if(d.emprunt){ DB.emprunts.push(d.emprunt); (d.remboursements||[]).forEach(r=>DB.remboursementsEmprunt.push(r)); } }
   else if(item.type==='fournisseur'){ DB.fournisseurs.push(d); }
   else if(item.type==='regulFournisseur'){ if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = []; DB.regularisationsFournisseur.push(d); }
+  else if(item.type==='apportCaisse'){ if(!DB.apportsCaisse) DB.apportsCaisse = []; DB.apportsCaisse.push(d); }
   else if(item.type==='epargne'){ if(!DB.epargne) DB.epargne = []; DB.epargne.push(d); }
   else if(item.type==='venteJour'){ if(!DB.ventesJour) DB.ventesJour = []; DB.ventesJour.push(d); }
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
@@ -2709,9 +2719,10 @@ function pageCaisse(){
 
     <div class="card">
       <div class="card-head"><div class="card-title">🧮 Contrôle vendeur</div></div>
-      <div class="hint" style="margin-bottom:12px">Le vendeur encaisse les ventes, paie fournisseurs et dépenses, puis verse le reste.</div>
+      <div class="hint" style="margin-bottom:12px">Le vendeur encaisse les ventes, reçoit de l'argent de la caisse si besoin, paie fournisseurs et dépenses, puis verse le reste.</div>
       <table class="tbl">
         <tr><td>Ventes encaissées</td><td class="num" style="color:var(--vert)">${fmtF(cmp.ventes)}</td></tr>
+        <tr><td>+ Argent de la caisse</td><td class="num" style="color:var(--vert)">${fmtF(cmp.apports)}</td></tr>
         <tr><td>− Fournisseurs payés</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.fournisseursPayes)}</td></tr>
         <tr><td>− Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.depenses)}</td></tr>
         <tr><td><b>= Devrait verser</b></td><td class="num" style="font-weight:800">${fmtF(cmp.duParVendeur)}</td></tr>
@@ -2727,6 +2738,15 @@ function pageCaisse(){
       ${cmp.statut==='manque' ? `<div class="hint" style="color:var(--rouge)">Le vendeur doit ${fmt(-cmp.ecart)} ${DB.parametres.devise} de plus.</div>` :
         cmp.statut==='surplus' ? `<div class="hint" style="color:var(--ambre)">Le vendeur a versé ${fmt(cmp.ecart)} ${DB.parametres.devise} de trop.</div>` :
         `<div class="hint" style="color:var(--vert)">Tout correspond parfaitement.</div>`}
+      ${cmp.duParVendeur<0 ? `<div class="hint" style="margin-top:6px">« Devrait verser » est négatif : il manque sûrement l'argent de la caisse que vous lui avez remis pour payer.</div>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="openApportSheet()" style="margin-top:12px">➕ Argent de la caisse remis au vendeur</button>
+      ${(DB.apportsCaisse||[]).length ? `<div style="margin-top:10px">
+        ${[...(DB.apportsCaisse||[])].sort((a,b)=> a.date<b.date?1:-1).map(a=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(a.montant)} ${DB.parametres.devise}</div>
+          <div class="cat-meta">${dateFr(a.date)}${a.note?' • '+a.note:''}</div></div>
+          <button class="btn btn-sm btn-ghost" onclick="supprApportUI('${a.id}')">🗑️</button>
+        </div>`).join('')}
+      </div>` : ''}
     </div>
 
     <div class="card">
@@ -5843,6 +5863,68 @@ try{
   window.addEventListener('offline', majEtatConnexion);
   setTimeout(majEtatConnexion, 1200);
 }catch(e){}
+/* ============================================================
+   ARGENT DE LA CAISSE REMIS AU VENDEUR
+   S'ajoute à ce qu'il a encaissé pour payer les fournisseurs.
+   Ce n'est PAS un mouvement de caisse : la sortie réelle est déjà
+   enregistrée par le paiement du fournisseur.
+   ============================================================ */
+function ajouterApportCaisse({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  if(!DB.apportsCaisse) DB.apportsCaisse = [];
+  const a = { id: uid('ap'), date: date||auj(), montant, note:(note||'').trim() };
+  DB.apportsCaisse.push(a);
+  sauverDB();
+  return a;
+}
+function supprimerApportCaisse(id){
+  const a = (DB.apportsCaisse||[]).find(x=>x.id===id);
+  if(a) versCorbeille('apportCaisse', a, 'Argent de la caisse du '+dateFr(a.date)+' ('+fmt(a.montant)+' '+DB.parametres.devise+')');
+  DB.apportsCaisse = (DB.apportsCaisse||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+function totalApportsCaisse(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  let t = 0;
+  for(const a of (DB.apportsCaisse||[])){ if(dans(a.date)) t += a.montant; }
+  return t;
+}
+
+function openApportSheet(){
+  const dev = DB.parametres.devise;
+  sheet(`
+    <h2>➕ Argent de la caisse</h2>
+    <div class="s-sub">L'argent que vous avez sorti de la caisse et remis au vendeur pour l'aider à payer les fournisseurs.</div>
+    <div class="hint" style="margin-bottom:12px">💰 Disponible en caisse : <b>${fmt(soldeCaisse())} ${dev}</b></div>
+    <div class="field"><label>Montant remis (${dev})</label>
+      <input class="input" id="apMontant" type="number" inputmode="numeric" placeholder="Ex: 51200"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="apNote" placeholder="Ex: pour payer Depot Baraka"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="apDate" type="date" value="${auj()}"></div>
+    <div class="hint" style="margin-bottom:10px">Sert au contrôle du vendeur. La caisse n'est pas diminuée deux fois : la sortie réelle est déjà comptée par le paiement du fournisseur.</div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerApport()">Enregistrer</button>
+    </div>
+  `);
+}
+function validerApport(){
+  const montant = Number($('#apMontant').value)||0;
+  const note = $('#apNote').value.trim();
+  const date = $('#apDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterApportCaisse({date, montant, note});
+  toast('Enregistré ✓');
+  closeSheet();
+  go('caisse');
+}
+function supprApportUI(id){
+  supprimerApportCaisse(id);
+  toast('Supprimé (dans la corbeille)');
+  go('caisse');
+}
 </script>
 </body>
 </html>
