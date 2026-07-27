@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="22-07-2026 v13 (Contrôle vendeur complet ✓)">
+<meta name="frigo-version" content="27-07-2026 v17 (Sauvegarde protégée ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -360,7 +360,7 @@ function chargerDB(){
     DB = source ? JSON.parse(source) : dbVide();
   }catch(e){
     // JSON corrompu → essayer la copie de secours
-    try{ DB = secours ? JSON.parse(secours) : dbVide(); }
+    try{ DB = secours ? JSON.parse(secours) : dbVide(); if(secours) window._donneesRecuperees = true; }
     catch(e2){ DB = dbVide(); }
   }
   // migration douce : recrée les champs manquants (sécurise aussi la restauration d'anciennes sauvegardes)
@@ -397,20 +397,46 @@ function migrerDB(){
   if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = [];
   if(!DB.epargne) DB.epargne = [];
   if(!DB.apportsCaisse) DB.apportsCaisse = [];
+  if(!DB.transferts) DB.transferts = [];
   if(DB.epargneReportee == null) DB.epargneReportee = 0;
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
+  if(!('quiPaieFournisseurs' in DB.parametres)) DB.parametres.quiPaieFournisseurs = 'patron';
   // seuil d'alerte par catégorie (défaut 15)
   DB.categories.forEach(c=>{ if(!('seuil' in c)) c.seuil = 15; });
+  // Nettoyage des noms déjà enregistrés qui contiennent des caractères cassant l'affichage
+  ['fournisseurs','clients','produits','categories'].forEach(function(cle){
+    if(Array.isArray(DB[cle])){
+      for(const o of DB[cle]){ if(o && typeof o.nom === 'string'){ const p = nomSain(o.nom); if(p !== o.nom) o.nom = p; } }
+    }
+  });
+  for(const a of (DB.achats||[])){
+    if(typeof a.fournisseur === 'string'){ const p = nomSain(a.fournisseur); if(p !== a.fournisseur) a.fournisseur = p; }
+    if(typeof a.produit === 'string'){ const p = nomSain(a.produit); if(p !== a.produit) a.produit = p; }
+  }
+  if(DB.parametres){
+    if(typeof DB.parametres.boutique === 'string') DB.parametres.boutique = nomSain(DB.parametres.boutique) || 'Mon Frigo';
+    if(typeof DB.parametres.gerant === 'string') DB.parametres.gerant = nomSain(DB.parametres.gerant);
+  }
+
   // Réparation : relier chaque achat à un fournisseur (une dette ne doit jamais devenir invisible)
   if(DB.achats && DB.fournisseurs){
     for(const a of DB.achats){
       const lie = a.fournisseurId && DB.fournisseurs.some(f=>f.id===a.fournisseurId);
       if(lie) continue;
-      const reste = (Number(a.prixGlobal)||0) - (Number(a.montantPaye)||0);
+      const px = Number(a.prixGlobal)||0;
       const nomA = (a.fournisseur||'').trim();
-      if(nomA || reste > 0){
-        const f = trouverOuCreerFournisseur(nomA || 'Divers');
-        if(f){ a.fournisseurId = f.id; a.fournisseur = f.nom; }
+      if(!nomA && px<=0) continue;                       // rien à rattacher
+      const f = trouverOuCreerFournisseur(nomA || 'Divers');
+      if(!f) continue;
+      a.fournisseurId = f.id;
+      a.fournisseur = f.nom;
+      // Un achat orphelin n'a jamais pu recevoir de paiement (un paiement exige un
+      // fournisseur) : si de l'argent a été payé dessus, la sortie de caisse était
+      // invisible et gonflait le solde. On la rétablit, sans re-imputer montantPaye.
+      const paye = Math.min(Number(a.montantPaye)||0, px);
+      if(paye > 0){
+        DB.paiements.push({ id: uid('pay'), date: a.date||auj(), fournisseurId: f.id,
+          achatId: a.id, montant: paye, note: 'Paiement retrouvé (réparation)' });
       }
     }
   }
@@ -429,8 +455,9 @@ function migrerDB(){
 
 let _dernierBackupTs = 0;
 let _sauvegardeEnPause = false;   // pour les opérations groupées (import)
+let _sauvegardeKO = false;
 function sauverDB(){
-  if(_sauvegardeEnPause) return;  // on enregistrera une seule fois à la fin
+  if(_sauvegardeEnPause) return true;  // on enregistrera une seule fois à la fin
   const data = JSON.stringify(DB);
   try{
     localStorage.setItem(DB_KEY, data);
@@ -439,12 +466,33 @@ function sauverDB(){
     // (l'écrire à chaque saisie doublait le travail et ralentissait l'application)
     const maintenant = Date.now();
     if(maintenant - _dernierBackupTs > 30000){
-      localStorage.setItem(DB_KEY + '_backup', data);
-      _dernierBackupTs = maintenant;
+      // si la copie de secours échoue, l'enregistrement principal reste valable
+      try{ localStorage.setItem(DB_KEY + '_backup', data); _dernierBackupTs = maintenant; }catch(e2){}
     }
+    if(_sauvegardeKO){ _sauvegardeKO = false; majAlerteSauvegardeKO(); }
+    return true;
   }catch(e){
+    // Mémoire du téléphone pleine ou navigation privée : RIEN n'a été enregistré.
+    // On ne peut pas laisser l'application faire comme si tout allait bien.
     console.warn('Erreur sauvegarde', e);
+    _sauvegardeKO = true;
+    majAlerteSauvegardeKO();
+    return false;
   }
+}
+function majAlerteSauvegardeKO(){
+  try{
+    let el = document.getElementById('bandeauSauvegardeKO');
+    if(_sauvegardeKO && !el){
+      el = document.createElement('div');
+      el.id = 'bandeauSauvegardeKO';
+      el.style.cssText = 'position:fixed;left:10px;right:10px;top:10px;z-index:10000;background:#7F1D1D;border:2px solid #EF4444;color:#FEE2E2;padding:12px 14px;border-radius:12px;text-align:center;font-size:13px;font-weight:700;line-height:1.5';
+      el.innerHTML = "⚠️ ENREGISTREMENT IMPOSSIBLE<br><span style=\"font-weight:500\">La mémoire du téléphone est pleine. Vos dernières saisies ne sont PAS gardées. Copiez votre sauvegarde et libérez de la place.</span>";
+      document.body.appendChild(el);
+    } else if(!_sauvegardeKO && el && el.remove){
+      el.remove();
+    }
+  }catch(e){}
 }
 
 /* Demander à Android/navigateur de NE PAS effacer nos données */
@@ -460,6 +508,18 @@ async function demanderPersistance(){
 }
 
 function uid(p='id'){ return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+/* Nettoie un nom saisi : les caractères < > " cassent l'affichage et les
+   champs de saisie. Ils n'ont aucune utilité dans un nom de fournisseur,
+   de client, de produit ou de boutique. On retire d'abord les balises
+   entières (<b>, </i>…) pour ne pas laisser de lettres parasites. */
+function nomSain(s){
+  return String(s==null?'':s)
+    .replace(/<[^>]*>/g, '')   // balise complète
+    .replace(/[<>"]/g, '')     // caractères isolés restants
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
 // ---------- Helpers format ----------
 function fmt(n){ return Math.round(n||0).toLocaleString('fr-FR'); }
@@ -562,7 +622,7 @@ function achatsDepuisDernierInventaire(catId){
 //  CRÉATION D'UN ACHAT
 // ============================================================
 function trouverOuCreerFournisseur(nom){
-  const n = (nom||'').trim();
+  const n = nomSain(nom);
   if(!n) return null;
   let f = DB.fournisseurs.find(x=>x.nom.toUpperCase()===n.toUpperCase());
   if(!f){
@@ -581,9 +641,10 @@ function ajouterAchat({date, fournisseur, produitNom, categorieId, cartons, cont
   const prixUnitaire = quantite>0 ? prixGlobal/quantite : 0;
 
   // créer le produit s'il n'existe pas
-  let prod = DB.produits.find(p=>p.nom.toUpperCase()===produitNom.trim().toUpperCase());
+  const nomProd = nomSain(produitNom);
+  let prod = DB.produits.find(p=>p.nom.toUpperCase()===nomProd.toUpperCase());
   if(!prod){
-    prod = { id: uid('prod'), nom: produitNom.trim(), categorieId };
+    prod = { id: uid('prod'), nom: nomProd, categorieId };
     DB.produits.push(prod);
   } else {
     prod.categorieId = categorieId;
@@ -621,9 +682,10 @@ function modifierAchat(id, {date, fournisseur, produitNom, categorieId, cartons,
   prixGlobal = Number(prixGlobal)||0;
   const quantite = cartons * contenu;
   // produit
-  let prod = DB.produits.find(p=>p.nom.toUpperCase()===produitNom.trim().toUpperCase());
+  const nomProd = nomSain(produitNom);
+  let prod = DB.produits.find(p=>p.nom.toUpperCase()===nomProd.toUpperCase());
   if(!prod){
-    prod = { id: uid('prod'), nom: produitNom.trim(), categorieId };
+    prod = { id: uid('prod'), nom: nomProd, categorieId };
     DB.produits.push(prod);
   } else {
     prod.categorieId = categorieId;
@@ -1200,6 +1262,12 @@ function mouvementsCaisse(){
       libelle: (e.sens==='retrait' ? 'Retrait d\'épargne' : 'Mise de côté (épargne)') + (e.note ? ' — '+e.note : ''),
       montant: e.montant, ref: e.id });
   }
+  // Transferts avec le café : sortie ou entrée de caisse, avec historique
+  for(const t of (DB.transferts||[])){
+    mvts.push({ date: t.date, heure:'', type:'transfertCafe', sens: t.sens==='versCafe' ? '-' : '+',
+      libelle: (t.sens==='versCafe' ? 'Transféré vers le café' : 'Reçu du café') + (t.note ? ' — '+t.note : ''),
+      montant: t.montant, ref: t.id });
+  }
   // Régularisations de caisse (correction du solde : +/- selon l'écart)
   for(const rc of (DB.regularisationsCaisse||[])){
     mvts.push({ date: rc.date, heure:'zzz', type:'regulCaisse', sens: rc.ecart>=0?'+':'-',
@@ -1232,12 +1300,13 @@ function detailCaisse(){  const depart = DB.soldeDepartCaisse || 0;
   let versements = 0; for(const v of DB.versements) versements += v.montant;
   let regularisations = 0; for(const rc of (DB.regularisationsCaisse||[])) regularisations += rc.ecart;
   let ventes = 0; for(const inv of DB.inventaires) ventes += inv.totalCA;
-  // Solde hors ventes = départ − fournisseurs − dépenses − remboursements − épargne ± régul
+  // Solde hors ventes = départ − fournisseurs − dépenses − remboursements − épargne ± transferts ± régul
   // (les versements du vendeur n'entrent pas ici : voir « Contrôle vendeur »)
   let epargneNette = 0; for(const e of (DB.epargne||[])) epargneNette += (e.sens==='retrait' ? -e.montant : e.montant);
-  const soldeHorsVentes = depart - fournisseurs - depenses - remboursements - epargneNette + regularisations;
+  let transfertsNet = 0; for(const t of (DB.transferts||[])) transfertsNet += (t.sens==='versCafe' ? -t.montant : t.montant);
+  const soldeHorsVentes = depart - fournisseurs - depenses - remboursements - epargneNette + transfertsNet + regularisations;
   const soldeTotal = soldeHorsVentes + ventes;
-  return { depart, versements, fournisseurs, depenses, remboursements, epargneNette, regularisations, soldeHorsVentes, ventes, soldeTotal };
+  return { depart, versements, fournisseurs, depenses, remboursements, epargneNette, transfertsNet, regularisations, soldeHorsVentes, ventes, soldeTotal };
 }
 
 // ============================================================
@@ -1257,9 +1326,11 @@ function resumeSemaineActuelle(){
   return {
     dateDebut, dateFin, ventes, achats, depenses, ventesSaisies,
     epargne: totalEpargne(),
+    transfertsNet: totalTransfertsNet(),
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
     cafeSoldeTotal: cafe.soldeTotal,
+    transfertsNet: totalTransfertsNet(),
     soldeCaisseFin: soldeCaisse(), valeurStock,
     detteFournisseurs: totalDettesFournisseurs(),
     creancesClients: totalCreancesClients(),
@@ -1289,10 +1360,12 @@ function rapportSemaineTexte(r){
     L.push('   Résultat : ' + fmt(r.cafeResultat) + ' ' + dev);
     if(r.cafeSoldeTotal!=null) L.push('   💰 Solde café : ' + fmt(r.cafeSoldeTotal) + ' ' + dev);
   }
+  if(r.transfertsNet) L.push('🔄 Transferts caisse ↔ café : ' + (r.transfertsNet>0?'+':'') + fmt(r.transfertsNet) + ' ' + dev + (r.transfertsNet<0?' (vers le café)':' (reçu du café)'));
   L.push('——————————————');
   L.push('💰 Caisse en fin de semaine : ' + fmt(r.soldeCaisseFin) + ' ' + dev);
   L.push('📦 Valeur du stock : ' + fmt(r.valeurStock) + ' ' + dev);
   if(r.epargne) L.push('🐖 Épargne mise de côté : ' + fmt(r.epargne) + ' ' + dev);
+  if(r.transfertsNet) L.push('🔄 Transferts caisse ↔ café : ' + (r.transfertsNet>0?'+':'') + fmt(r.transfertsNet) + ' ' + dev + (r.transfertsNet<0?' (vers le café)':' (reçu du café)'));
   if(r.detteFournisseurs>0) L.push('🏢 Reste à payer fournisseurs : ' + fmt(r.detteFournisseurs) + ' ' + dev);
   if(r.creancesClients>0) L.push('👥 Clients me doivent : ' + fmt(r.creancesClients) + ' ' + dev);
   if(r.detteEmprunts>0) L.push('🏦 Reste emprunts : ' + fmt(r.detteEmprunts) + ' ' + dev);
@@ -1337,6 +1410,9 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.regularisationsCaisse = [];
   DB.ventesJour = [];
   DB.apportsCaisse = [];
+  // Transferts caisse ↔ café : leur effet est déjà intégré (cafeSoldeReporte mis à jour
+  // en direct à chaque transfert, et l'argent réel compté couvre déjà les sorties/entrées)
+  DB.transferts = [];
   // Épargne : le total mis de côté est reporté sur la nouvelle semaine
   DB.epargneReportee = totalEpargne();
   DB.epargne = [];
@@ -1461,11 +1537,17 @@ function comparaisonVendeur(debut, fin){
     if(dansPeriode(a.date)) apports += a.montant;
   }
 
-  const duParVendeur = ventes + apports - fournisseursPayes - depenses;
+  // Qui paie les fournisseurs ? Si c'est le patron lui-même (pas le vendeur),
+  // ces paiements ne concernent pas le contrôle du vendeur : il n'a jamais
+  // touché cet argent. (La caisse, elle, les compte toujours comme sortis.)
+  const fournisseursParPatron = !!(DB.parametres && DB.parametres.quiPaieFournisseurs === 'patron');
+  const fournisseursVendeur = fournisseursParPatron ? 0 : fournisseursPayes;
+
+  const duParVendeur = ventes + apports - fournisseursVendeur - depenses;
   const ecart = verse - duParVendeur;  // négatif = manque, positif = surplus
 
   return {
-    ventes, apports, fournisseursPayes, depenses, verse,
+    ventes, apports, fournisseursPayes, fournisseursVendeur, fournisseursParPatron, depenses, verse,
     duParVendeur, ecart,
     statut: ecart===0 ? 'ok' : (ecart<0 ? 'manque' : 'surplus')
   };
@@ -1600,7 +1682,7 @@ function supprimerRegularisation(id){
 //  CLIENTS À CRÉDIT (qui vous doit de l'argent)
 // ============================================================
 function trouverOuCreerClient(nom){
-  const n = (nom||'').trim();
+  const n = nomSain(nom);
   if(!n) return null;
   let c = DB.clients.find(x=>x.nom.toUpperCase()===n.toUpperCase());
   if(!c){ c = { id: uid('cli'), nom: n, tel: '' }; DB.clients.push(c); }
@@ -1793,6 +1875,11 @@ function restaurerCorbeille(id){
   else if(item.type==='regulFournisseur'){ if(!DB.regularisationsFournisseur) DB.regularisationsFournisseur = []; DB.regularisationsFournisseur.push(d); }
   else if(item.type==='apportCaisse'){ if(!DB.apportsCaisse) DB.apportsCaisse = []; DB.apportsCaisse.push(d); }
   else if(item.type==='epargne'){ if(!DB.epargne) DB.epargne = []; DB.epargne.push(d); }
+  else if(item.type==='transfert'){
+    if(!DB.transferts) DB.transferts = [];
+    DB.transferts.push(d);
+    DB.cafeSoldeReporte = (DB.cafeSoldeReporte||0) + (d.sens==='versCafe' ? d.montant : -d.montant);
+  }
   else if(item.type==='venteJour'){ if(!DB.ventesJour) DB.ventesJour = []; DB.ventesJour.push(d); }
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
   else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
@@ -2095,6 +2182,8 @@ function go(page){
   else if(page==='ventesjour') { c.innerHTML = pageVentesJour(); }
   else if(page==='achatsjour') { c.innerHTML = pageAchatsJour(); }
   else if(page==='epargne') { c.innerHTML = pageEpargne(); }
+  else if(page==='transferts') { c.innerHTML = pageTransferts(); }
+  else if(page==='transferts') { c.innerHTML = pageTransferts(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
@@ -2583,6 +2672,8 @@ function pagePlus(){
       <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-top:10px">📅 Ventes journalières</button>
       <button class="btn btn-ghost" onclick="go('achatsjour')" style="margin-top:10px">📆 Achats par date</button>
       <button class="btn btn-ghost" onclick="go('epargne')" style="margin-top:10px">🐖 Mon épargne</button>
+      <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
+      <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
       <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
       <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
     </div>
@@ -2714,16 +2805,26 @@ function pageCaisse(){
     </div>
 
     <button class="btn btn-ambre" onclick="openRegulariserCaisseSheet()" style="margin-bottom:16px">⚖️ Régulariser la caisse (compter l'argent réel)</button>
+    <button class="btn btn-ghost" onclick="go('transferts')" style="margin-bottom:16px">🔄 Transférer avec le café</button>
+    <button class="btn btn-ghost" onclick="go('transferts')" style="margin-bottom:16px">🔄 Transférer avec le café</button>
 
     ${blocDetailCaisse()}
 
     <div class="card">
       <div class="card-head"><div class="card-title">🧮 Contrôle vendeur</div></div>
-      <div class="hint" style="margin-bottom:12px">Le vendeur encaisse les ventes, reçoit de l'argent de la caisse si besoin, paie fournisseurs et dépenses, puis verse le reste.</div>
+      <div class="seg" style="margin-bottom:10px">
+        <button type="button" class="${cmp.fournisseursParPatron?'':'on'}" onclick="setQuiPaieFournisseurs('vendeur')">Le vendeur paie</button>
+        <button type="button" class="${cmp.fournisseursParPatron?'on':''}" onclick="setQuiPaieFournisseurs('patron')">C'est moi qui paie</button>
+      </div>
+      <div class="hint" style="margin-bottom:12px">${cmp.fournisseursParPatron
+        ? "Vous payez les fournisseurs vous-même : ces paiements ne comptent pas dans le contrôle. Le vendeur encaisse les ventes et doit tout vous verser."
+        : "Le vendeur encaisse les ventes, reçoit de l'argent de la caisse si besoin, paie fournisseurs et dépenses, puis verse le reste."}</div>
       <table class="tbl">
         <tr><td>Ventes encaissées</td><td class="num" style="color:var(--vert)">${fmtF(cmp.ventes)}</td></tr>
-        <tr><td>+ Argent de la caisse</td><td class="num" style="color:var(--vert)">${fmtF(cmp.apports)}</td></tr>
-        <tr><td>− Fournisseurs payés</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.fournisseursPayes)}</td></tr>
+        ${(cmp.apports>0 || !cmp.fournisseursParPatron) ? `<tr><td>+ Argent de la caisse</td><td class="num" style="color:var(--vert)">${fmtF(cmp.apports)}</td></tr>` : ''}
+        ${cmp.fournisseursParPatron
+          ? `<tr style="opacity:.5"><td>Fournisseurs payés par vous<div class="cat-meta">hors contrôle — payés de votre poche</div></td><td class="num">${fmtF(cmp.fournisseursPayes)}</td></tr>`
+          : `<tr><td>− Fournisseurs payés</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.fournisseursPayes)}</td></tr>`}
         <tr><td>− Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.depenses)}</td></tr>
         <tr><td><b>= Devrait verser</b></td><td class="num" style="font-weight:800">${fmtF(cmp.duParVendeur)}</td></tr>
         <tr><td>Réellement versé</td><td class="num" style="color:var(--givre)">${fmtF(cmp.verse)}</td></tr>
@@ -2739,7 +2840,7 @@ function pageCaisse(){
         cmp.statut==='surplus' ? `<div class="hint" style="color:var(--ambre)">Le vendeur a versé ${fmt(cmp.ecart)} ${DB.parametres.devise} de trop.</div>` :
         `<div class="hint" style="color:var(--vert)">Tout correspond parfaitement.</div>`}
       ${cmp.duParVendeur<0 ? `<div class="hint" style="margin-top:6px">« Devrait verser » est négatif : il manque sûrement l'argent de la caisse que vous lui avez remis pour payer.</div>` : ''}
-      <button class="btn btn-ghost btn-sm" onclick="openApportSheet()" style="margin-top:12px">➕ Argent de la caisse remis au vendeur</button>
+      ${(!cmp.fournisseursParPatron || (DB.apportsCaisse||[]).length) ? `<button class="btn btn-ghost btn-sm" onclick="openApportSheet()" style="margin-top:12px">➕ Argent de la caisse remis au vendeur</button>` : ''}
       ${(DB.apportsCaisse||[]).length ? `<div style="margin-top:10px">
         ${[...(DB.apportsCaisse||[])].sort((a,b)=> a.date<b.date?1:-1).map(a=>`<div class="cat-row">
           <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(a.montant)} ${DB.parametres.devise}</div>
@@ -3103,6 +3204,8 @@ function pageCafe(){
         <span style="color:var(--givre,#5eead4)">${fmt(statsCafe().soldeTotal)} ${dev}</span>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="openSoldeCafeSheet()" style="margin-top:8px">✏️ Régler le solde reporté</button>
+      <button class="btn btn-ghost btn-sm" onclick="go('transferts')" style="margin-top:8px;margin-left:8px">🔄 Transférer avec la caisse</button>
+      <button class="btn btn-ghost btn-sm" onclick="go('transferts')" style="margin-top:8px;margin-left:8px">🔄 Transférer avec la caisse</button>
     </div>
 
     <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
@@ -3167,11 +3270,12 @@ function blocDetailCaisse(){
   const d = detailCaisse();
   const dev = DB.parametres.devise;
   const ligne = (label, val, sens)=>{
-    if(val===0 && (sens==='+v'||sens==='reg')) return ''; // masquer versement/régul si 0
+    if(val===0 && (sens==='+v'||sens==='reg'||sens==='transfert')) return ''; // masquer versement/régul/transfert si 0
     let signe = '', couleur = 'var(--texte)';
     if(sens==='+' || sens==='+v'){ signe='+'; couleur='var(--vert)'; }
     else if(sens==='-'){ signe='−'; couleur='var(--rouge)'; val=Math.abs(val); }
     else if(sens==='reg'){ signe = d.regularisations>=0?'+':'−'; couleur = d.regularisations>=0?'var(--vert)':'var(--rouge)'; val=Math.abs(val); }
+    else if(sens==='transfert'){ signe = d.transfertsNet>=0?'+':'−'; couleur = d.transfertsNet>=0?'var(--vert)':'var(--rouge)'; val=Math.abs(val); }
     return `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px">
       <span style="color:var(--texte-doux)">${label}</span>
       <span style="color:${couleur};font-weight:600;font-variant-numeric:tabular-nums">${signe}${fmt(val)}</span></div>`;
@@ -3184,6 +3288,7 @@ function blocDetailCaisse(){
       ${ligne('Dépenses', d.depenses, '-')}
       ${ligne('Remboursements emprunt', d.remboursements, '-')}
       ${d.epargneNette ? ligne('Mis de côté (épargne)', d.epargneNette, '-') : ''}
+      ${ligne('Transferts avec le café', d.transfertsNet, 'transfert')}
       ${ligne('Régularisations', d.regularisations, 'reg')}
       <div style="border-top:1px solid var(--bord);margin:8px 0"></div>
       <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:700">
@@ -3327,7 +3432,7 @@ function bindPlus(){
 
   // --- Réglages boutique ---
   $('#saveSet')?.addEventListener('click', ()=>{
-    DB.parametres.boutique = $('#setBoutique').value.trim() || 'Mon Frigo';
+    DB.parametres.boutique = nomSain($('#setBoutique').value) || 'Mon Frigo';
     sauverDB(); toast('Enregistré ✓'); renderApp();
   });
 }
@@ -3648,9 +3753,9 @@ function openCatEdit(catId){
     if(!nom){ toast('Indiquez le nom','err'); return; }
     if(prix<=0){ toast('Indiquez le prix','err'); return; }
     if(cat){
-      cat.nom = nom; cat.prix = prix; cat.couleur = selCol; cat.seuil = seuil;
+      cat.nom = nomSain(nom); cat.prix = prix; cat.couleur = selCol; cat.seuil = seuil;
     } else {
-      DB.categories.push({id:uid('cat'), nom, prix, couleur:selCol, seuil});
+      DB.categories.push({id:uid('cat'), nom:nomSain(nom), prix, couleur:selCol, seuil});
     }
     sauverDB(); toast('Catégorie enregistrée ✓'); closeSheet(); go('plus');
   });
@@ -4178,7 +4283,7 @@ function creerCategoriesImport(){
     const nom = (inp.dataset.newcat||'').trim();
     const prix = Number(inp.value)||0;
     if(nom && prix>0 && !categorieParNom(nom)){
-      DB.categories.push({ id: uid('cat'), nom, prix, couleur: couleurs[DB.categories.length % couleurs.length] });
+      DB.categories.push({ id: uid('cat'), nom: nomSain(nom), prix, couleur: couleurs[DB.categories.length % couleurs.length] });
       created++;
     }
   });
@@ -4306,7 +4411,7 @@ function confirmerRegularisation(){
   const motif = $('#regMotif') ? $('#regMotif').value : '';
   const user = $('#regUser') ? $('#regUser').value.trim() : '';
   // mémoriser le nom du gérant pour la prochaine fois
-  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = user; }
+  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = nomSain(user); }
 
   const apercu = apercuRegularisation(comptes).filter(x=>x.ecart!==0);
   if(apercu.length===0){ toast('Aucun écart à régulariser','err'); return; }
@@ -4788,7 +4893,7 @@ function confirmerRegulCaisse(){
   const physique = Number(el.value)||0;
   const motif = $('#rcMotif') ? $('#rcMotif').value : '';
   const user = $('#rcUser') ? $('#rcUser').value.trim() : '';
-  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = user; }
+  if(user){ if(!DB.parametres) DB.parametres={}; DB.parametres.gerant = nomSain(user); }
 
   if(ecartCaisse(physique)===0){ toast('La caisse est déjà juste','err'); return; }
   const rc = regulariserCaisse({physique, motif, user});
@@ -5545,7 +5650,7 @@ function openJourAchatsSheet(date){
 function renommerFournisseur(fId, nouveauNom){
   const f = DB.fournisseurs.find(x=>x.id===fId);
   if(!f) return null;
-  const nom = (nouveauNom||'').trim();
+  const nom = nomSain(nouveauNom);
   if(!nom) return null;
   const existant = DB.fournisseurs.find(x=>x.id!==fId && (x.nom||'').toLowerCase() === nom.toLowerCase());
   if(existant){
@@ -5664,7 +5769,7 @@ function validerRegulFournisseur(fId){
   const montantReel = Math.max(0, Number(el.value)||0);
   const motif = $('#rfMotif') ? $('#rfMotif').value : '';
   const user = $('#rfUser') ? $('#rfUser').value.trim() : '';
-  if(user){ if(!DB.parametres) DB.parametres = {}; DB.parametres.gerant = user; }
+  if(user){ if(!DB.parametres) DB.parametres = {}; DB.parametres.gerant = nomSain(user); }
   const r = regulariserFournisseur({fournisseurId:fId, montantReel, motif, user});
   if(!r){ toast('Le solde est déjà à ce montant','err'); return; }
   toast('Solde régularisé ✓');
@@ -5722,6 +5827,125 @@ function supprimerMouvementEpargne(id){
   if(e) versCorbeille('epargne', e, (e.sens==='retrait'?'Retrait':'Mise de côté')+' épargne du '+dateFr(e.date));
   DB.epargne = (DB.epargne||[]).filter(x=>x.id!==id);
   sauverDB();
+}
+
+/* ============================================================
+   TRANSFERTS CAISSE BOISSONS ↔ SOLDE CAFÉ
+   Déplace de l'argent d'un pot vers l'autre, avec historique.
+   Chaque transfert est plafonné à ce qui est réellement disponible
+   dans le pot de départ. Le café accumule sa part dans
+   cafeSoldeReporte, mis à jour immédiatement (pas d'attente de clôture).
+   ============================================================ */
+function transfererVersCafe({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const dispo = soldeCaisse();
+  if(dispo<=0) return null;
+  if(montant > dispo) montant = dispo;
+  if(!DB.transferts) DB.transferts = [];
+  const t = { id: uid('tr'), date: date||auj(), sens:'versCafe', montant, note:(note||'').trim() };
+  DB.transferts.push(t);
+  DB.cafeSoldeReporte = (DB.cafeSoldeReporte||0) + montant;
+  sauverDB();
+  return t;
+}
+function transfererVersBoissons({date, montant, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  const dispo = statsCafe().soldeTotal;
+  if(dispo<=0) return null;
+  if(montant > dispo) montant = dispo;
+  if(!DB.transferts) DB.transferts = [];
+  const t = { id: uid('tr'), date: date||auj(), sens:'versBoissons', montant, note:(note||'').trim() };
+  DB.transferts.push(t);
+  DB.cafeSoldeReporte = (DB.cafeSoldeReporte||0) - montant;
+  sauverDB();
+  return t;
+}
+function supprimerTransfert(id){
+  const t = (DB.transferts||[]).find(x=>x.id===id);
+  if(!t) return;
+  // annuler l'effet sur le café avant de retirer le mouvement
+  DB.cafeSoldeReporte = (DB.cafeSoldeReporte||0) + (t.sens==='versCafe' ? -t.montant : t.montant);
+  versCorbeille('transfert', t, (t.sens==='versCafe'?'Transfert vers le café':'Transfert vers les boissons')+' du '+dateFr(t.date)+' ('+fmt(t.montant)+' '+DB.parametres.devise+')');
+  DB.transferts = (DB.transferts||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+function totalTransfertsNet(debut, fin){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  let t = 0;
+  for(const x of (DB.transferts||[])){ if(dans(x.date)) t += (x.sens==='versCafe' ? -x.montant : x.montant); }
+  return t;
+}
+
+function pageTransferts(){
+  const dev = DB.parametres.devise;
+  const cB = soldeCaisse();
+  const cC = statsCafe().soldeTotal;
+  const mvts = [...(DB.transferts||[])].sort((a,b)=> a.date<b.date?1:-1);
+  return `
+  <div class="page">
+    <div class="page-title">🔄 Transferts caisse ↔ café</div>
+    <div class="page-sub">Déplacez de l'argent entre les deux, avec l'historique gardé.</div>
+
+    <div class="metrics" style="margin-bottom:16px">
+      <div class="metric accent"><div class="m-label">💰 Caisse boissons</div><div class="m-value mono">${fmt(cB)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">☕ Solde café</div><div class="m-value mono">${fmt(cC)} ${dev}</div></div>
+    </div>
+
+    <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn btn-ambre" onclick="openTransfertSheet('versCafe')">➡️ Vers le café</button>
+      <button class="btn btn-ghost" onclick="openTransfertSheet('versBoissons')">⬅️ Vers les boissons</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">Historique</div>
+      ${mvts.length===0 ? '<div class="hint">Aucun transfert pour le moment</div>' :
+        mvts.map(t=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${t.sens==='versCafe' ? '💰 → ☕ Vers le café' : '☕ → 💰 Vers les boissons'}</div>
+          <div class="cat-meta">${dateFr(t.date)}${t.note?' • '+t.note:''}</div></div>
+          <span style="font-weight:700">${fmt(t.montant)} ${dev}</span>
+          <button class="btn btn-sm btn-ghost" onclick="supprTransfertUI('${t.id}')" style="margin-left:8px">🗑️</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function openTransfertSheet(sens){
+  const dev = DB.parametres.devise;
+  const versCafe = (sens==='versCafe');
+  const dispo = versCafe ? soldeCaisse() : statsCafe().soldeTotal;
+  sheet(`
+    <h2>${versCafe ? "➡️ Transférer vers le café" : "⬅️ Transférer vers les boissons"}</h2>
+    <div class="s-sub">${versCafe ? "L'argent sort de la caisse boissons et rejoint le solde café." : "L'argent sort du solde café et rejoint la caisse boissons."}</div>
+    <div class="hint" style="margin-bottom:12px">Disponible : <b>${fmt(dispo)} ${dev}</b></div>
+    <div class="field"><label>Montant (${dev})</label>
+      <input class="input" id="trMontant" type="number" inputmode="numeric" placeholder="Ex: 10000"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="trNote" placeholder="Ex: avance pour achat café"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="trDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerTransfert('${sens}')">Transférer</button>
+    </div>
+  `);
+}
+function validerTransfert(sens){
+  const montant = Number($('#trMontant').value)||0;
+  const note = $('#trNote').value.trim();
+  const date = $('#trDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  const r = (sens==='versCafe') ? transfererVersCafe({date, montant, note}) : transfererVersBoissons({date, montant, note});
+  if(!r){ toast('Rien à transférer (solde à zéro)','err'); return; }
+  toast('Transfert enregistré ✓');
+  closeSheet();
+  go('transferts');
+}
+function supprTransfertUI(id){
+  supprimerTransfert(id);
+  toast('Supprimé (dans la corbeille)');
+  go('transferts');
 }
 
 function pageEpargne(){
@@ -5889,6 +6113,14 @@ function totalApportsCaisse(debut, fin){
   let t = 0;
   for(const a of (DB.apportsCaisse||[])){ if(dans(a.date)) t += a.montant; }
   return t;
+}
+
+function setQuiPaieFournisseurs(mode){
+  if(!DB.parametres) DB.parametres = {};
+  DB.parametres.quiPaieFournisseurs = (mode==='patron') ? 'patron' : 'vendeur';
+  sauverDB();
+  toast(mode==='patron' ? 'Les fournisseurs sont payés par vous ✓' : 'Les fournisseurs sont payés par le vendeur ✓');
+  go('caisse');
 }
 
 function openApportSheet(){
