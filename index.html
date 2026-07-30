@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="27-07-2026 v17 (Sauvegarde protégée ✓)">
+<meta name="frigo-version" content="30-07-2026 v21 (Secours à la fermeture ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -398,6 +398,7 @@ function migrerDB(){
   if(!DB.epargne) DB.epargne = [];
   if(!DB.apportsCaisse) DB.apportsCaisse = [];
   if(!DB.transferts) DB.transferts = [];
+  if(!DB.rationsVendeur) DB.rationsVendeur = [];
   if(DB.epargneReportee == null) DB.epargneReportee = 0;
   if(!DB.parametres) DB.parametres = { boutique:'Mon Frigo', devise:'F' };
   if(!('quiPaieFournisseurs' in DB.parametres)) DB.parametres.quiPaieFournisseurs = 'patron';
@@ -480,6 +481,18 @@ function sauverDB(){
     return false;
   }
 }
+/* Écrit tout de suite la copie de secours, sans attendre les 30 secondes.
+   Appelée quand l'utilisateur quitte l'application : c'est le moment où
+   iOS peut fermer l'onglet, donc celui où la copie doit être à jour. */
+function forcerCopieSecours(){
+  try{
+    if(!DB) return false;
+    localStorage.setItem(DB_KEY + '_backup', JSON.stringify(DB));
+    _dernierBackupTs = Date.now();
+    return true;
+  }catch(e){ return false; }   // mémoire pleine : l'enregistrement principal reste valable
+}
+
 function majAlerteSauvegardeKO(){
   try{
     let el = document.getElementById('bandeauSauvegardeKO');
@@ -563,6 +576,49 @@ function stockCategorie(catId){
 
 /* Coût moyen unitaire (PMP) d'une catégorie — utilisé seulement pour la valeur du stock.
    Le stock de départ est valorisé au coût d'achat saisi, sinon 0 (déjà payé avant). */
+/* Marge de chaque produit, calculée depuis ses achats réels.
+   Coût moyen = total payé / total acheté ; prix de vente = celui de sa catégorie. */
+function margeParProduit(){
+  const map = {};
+  for(const a of DB.achats){
+    if(a.reporte) continue;
+    const nom = (a.produit||'').trim();
+    if(!nom) continue;
+    const qte = Number(a.quantite)||0;
+    if(qte <= 0) continue;
+    const cle = nom.toUpperCase() + '|' + (a.categorieId||'');
+    if(!map[cle]) map[cle] = { nom, categorieId: a.categorieId, qte:0, valeur:0, nbAchats:0, dernierCout:0, derniereDate:'' };
+    const m = map[cle];
+    m.qte += qte;
+    m.valeur += Number(a.prixGlobal)||0;
+    m.nbAchats++;
+    if(!m.derniereDate || a.date >= m.derniereDate){
+      m.derniereDate = a.date;
+      m.dernierCout = qte>0 ? (Number(a.prixGlobal)||0)/qte : 0;
+    }
+  }
+  const res = [];
+  for(const k in map){
+    const m = map[k];
+    const cat = DB.categories.find(c=>c.id===m.categorieId);
+    const prixVente = cat ? (Number(cat.prix)||0) : 0;
+    const coutMoyen = m.qte>0 ? m.valeur/m.qte : 0;
+    const marge = prixVente - coutMoyen;
+    res.push({
+      nom: m.nom,
+      categorie: cat ? cat.nom : '?',
+      qte: m.qte, nbAchats: m.nbAchats,
+      coutMoyen: Math.round(coutMoyen),
+      dernierCout: Math.round(m.dernierCout),
+      prixVente,
+      marge: Math.round(marge),
+      margePct: prixVente>0 ? Math.round(marge/prixVente*100) : 0,
+      gainTotal: Math.round(marge * m.qte)
+    });
+  }
+  return res.sort((a,b)=> b.marge - a.marge);
+}
+
 function coutMoyenCategorie(catId){
   let qte = 0, valeur = 0;
   if(DB.stockDepart && DB.stockDepart.lignes && (catId in DB.stockDepart.lignes)){
@@ -586,10 +642,12 @@ function coutMoyenCategorie(catId){
 /* Définir ou modifier le stock de départ */
 function definirStockDepart(lignes, couts){
   const dateOrig = (DB.stockDepart && DB.stockDepart.date) ? DB.stockDepart.date : auj();
+  const lignesEntieres = {};
+  for(const k in (lignes||{})){ lignesEntieres[k] = Math.max(0, Math.round(Number(lignes[k])||0)); }
   DB.stockDepart = {
     date: dateOrig,                 // on garde la date d'origine lors d'une modification
     modifie: DB.stockDepart ? auj() : null,
-    lignes: lignes || {},
+    lignes: lignesEntieres,
     couts: couts || {}
   };
   sauverDB();
@@ -637,7 +695,7 @@ function ajouterAchat({date, fournisseur, produitNom, categorieId, cartons, cont
   contenu = Number(contenu)||0;
   prixGlobal = Number(prixGlobal)||0;
   montantPaye = Number(montantPaye)||0;
-  const quantite = cartons * contenu;
+  const quantite = Math.max(0, Math.round(cartons * contenu));  // jamais de demi-bouteille
   const prixUnitaire = quantite>0 ? prixGlobal/quantite : 0;
 
   // créer le produit s'il n'existe pas
@@ -680,7 +738,7 @@ function modifierAchat(id, {date, fournisseur, produitNom, categorieId, cartons,
   cartons = Number(cartons)||0;
   contenu = Number(contenu)||0;
   prixGlobal = Number(prixGlobal)||0;
-  const quantite = cartons * contenu;
+  const quantite = Math.max(0, Math.round(cartons * contenu));  // jamais de demi-bouteille
   // produit
   const nomProd = nomSain(produitNom);
   let prod = DB.produits.find(p=>p.nom.toUpperCase()===nomProd.toUpperCase());
@@ -731,7 +789,7 @@ function ajouterFacture({date, fournisseur, lignes, paiementMode, montantPartiel
     const prixGlobal = Number(l.prixGlobal)||0;
     const nom = (l.produitNom||'').trim();
     if(!nom || prixGlobal<=0) continue;   // ignorer les lignes vides
-    const quantite = cartons * contenu;
+    const quantite = Math.max(0, Math.round(cartons * contenu));  // jamais de demi-bouteille
     let prod = DB.produits.find(p=>p.nom.toUpperCase()===nom.toUpperCase());
     if(!prod){ prod = { id: uid('prod'), nom, categorieId: l.categorieId }; DB.produits.push(prod); }
     else prod.categorieId = l.categorieId;
@@ -1139,7 +1197,7 @@ function calculerInventaire(saisies){
   let totalCA = 0;
   for(const cat of DB.categories){
     if(!(cat.id in saisies)) continue;
-    const compte = Number(saisies[cat.id])||0;
+    const compte = Math.max(0, Math.round(Number(saisies[cat.id])||0));
     const stockAvant = stockCategorie(cat.id);   // théorique actuel (inclut déjà les achats)
     // Le stock théorique actuel = ce qui devrait être là.
     // Vendu = théorique - compté physique
@@ -1250,6 +1308,12 @@ function mouvementsCaisse(){
     mvts.push({ date: d.date, heure:'', type:'depense', sens:'-',
       libelle:'Dépense — '+d.motif, montant: d.montant, ref: d.id });
   }
+  // Ration et paiement du vendeur (sortie de caisse : il garde cet argent sur les ventes)
+  for(const r of (DB.rationsVendeur||[])){
+    mvts.push({ date: r.date, heure:'', type:'ration', sens:'-',
+      libelle: (r.type==='semaine' ? 'Paiement fin de semaine (vendeur)' : 'Ration du vendeur') + (r.note ? ' — '+r.note : ''),
+      montant: r.montant, ref: r.id });
+  }
   // Remboursements d'emprunt (sortie de caisse)
   for(const r of (DB.remboursementsEmprunt||[])){
     const e = (DB.emprunts||[]).find(x=>x.id===r.empruntId);
@@ -1304,9 +1368,10 @@ function detailCaisse(){  const depart = DB.soldeDepartCaisse || 0;
   // (les versements du vendeur n'entrent pas ici : voir « Contrôle vendeur »)
   let epargneNette = 0; for(const e of (DB.epargne||[])) epargneNette += (e.sens==='retrait' ? -e.montant : e.montant);
   let transfertsNet = 0; for(const t of (DB.transferts||[])) transfertsNet += (t.sens==='versCafe' ? -t.montant : t.montant);
-  const soldeHorsVentes = depart - fournisseurs - depenses - remboursements - epargneNette + transfertsNet + regularisations;
+  let rations = 0; for(const r of (DB.rationsVendeur||[])) rations += r.montant;
+  const soldeHorsVentes = depart - fournisseurs - depenses - rations - remboursements - epargneNette + transfertsNet + regularisations;
   const soldeTotal = soldeHorsVentes + ventes;
-  return { depart, versements, fournisseurs, depenses, remboursements, epargneNette, transfertsNet, regularisations, soldeHorsVentes, ventes, soldeTotal };
+  return { depart, versements, fournisseurs, depenses, rations, remboursements, epargneNette, transfertsNet, regularisations, soldeHorsVentes, ventes, soldeTotal };
 }
 
 // ============================================================
@@ -1326,6 +1391,7 @@ function resumeSemaineActuelle(){
   return {
     dateDebut, dateFin, ventes, achats, depenses, ventesSaisies,
     epargne: totalEpargne(),
+    rations: totalRations(),
     transfertsNet: totalTransfertsNet(),
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
@@ -1364,6 +1430,7 @@ function rapportSemaineTexte(r){
   L.push('——————————————');
   L.push('💰 Caisse en fin de semaine : ' + fmt(r.soldeCaisseFin) + ' ' + dev);
   L.push('📦 Valeur du stock : ' + fmt(r.valeurStock) + ' ' + dev);
+  if(r.rations) L.push('🍚 Ration + paiement du vendeur : ' + fmt(r.rations) + ' ' + dev);
   if(r.epargne) L.push('🐖 Épargne mise de côté : ' + fmt(r.epargne) + ' ' + dev);
   if(r.transfertsNet) L.push('🔄 Transferts caisse ↔ café : ' + (r.transfertsNet>0?'+':'') + fmt(r.transfertsNet) + ' ' + dev + (r.transfertsNet<0?' (vers le café)':' (reçu du café)'));
   if(r.detteFournisseurs>0) L.push('🏢 Reste à payer fournisseurs : ' + fmt(r.detteFournisseurs) + ' ' + dev);
@@ -1404,6 +1471,7 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   DB.achats = [];
   DB.inventaires = [];
   DB.depenses = [];
+  DB.rationsVendeur = [];
   DB.versements = [];
   DB.paiements = [];
   DB.regularisations = [];
@@ -1525,6 +1593,12 @@ function comparaisonVendeur(debut, fin){
   for(const d of DB.depenses){
     if(dansPeriode(d.date)) depenses += d.montant;
   }
+  // Ration journalière + paiement de fin de semaine : le vendeur garde cet
+  // argent sur les ventes, il doit donc verser d'autant moins.
+  let rations = 0;
+  for(const r of (DB.rationsVendeur||[])){
+    if(dansPeriode(r.date)) rations += r.montant;
+  }
   let verse = 0;
   for(const v of DB.versements){
     if(dansPeriode(v.date)) verse += v.montant;
@@ -1543,11 +1617,11 @@ function comparaisonVendeur(debut, fin){
   const fournisseursParPatron = !!(DB.parametres && DB.parametres.quiPaieFournisseurs === 'patron');
   const fournisseursVendeur = fournisseursParPatron ? 0 : fournisseursPayes;
 
-  const duParVendeur = ventes + apports - fournisseursVendeur - depenses;
+  const duParVendeur = ventes + apports - fournisseursVendeur - depenses - rations;
   const ecart = verse - duParVendeur;  // négatif = manque, positif = surplus
 
   return {
-    ventes, apports, fournisseursPayes, fournisseursVendeur, fournisseursParPatron, depenses, verse,
+    ventes, apports, fournisseursPayes, fournisseursVendeur, fournisseursParPatron, depenses, rations, verse,
     duParVendeur, ecart,
     statut: ecart===0 ? 'ok' : (ecart<0 ? 'manque' : 'surplus')
   };
@@ -1866,6 +1940,7 @@ function restaurerCorbeille(id){
   if(item.type==='achat'){ DB.achats.push(d); }
   else if(item.type==='inventaire'){ DB.inventaires.push(d); DB.inventaires.sort((a,b)=>a.date<b.date?-1:1); }
   else if(item.type==='depense'){ DB.depenses.push(d); }
+  else if(item.type==='ration'){ if(!DB.rationsVendeur) DB.rationsVendeur = []; DB.rationsVendeur.push(d); }
   else if(item.type==='versement'){ DB.versements.push(d); }
   else if(item.type==='creance'){ DB.creances.push(d); }
   else if(item.type==='paiementClient'){ DB.paiementsClients.push(d); }
@@ -2183,6 +2258,7 @@ function go(page){
   else if(page==='achatsjour') { c.innerHTML = pageAchatsJour(); }
   else if(page==='epargne') { c.innerHTML = pageEpargne(); }
   else if(page==='transferts') { c.innerHTML = pageTransferts(); }
+  else if(page==='rations') { c.innerHTML = pageRations(); }
   else if(page==='transferts') { c.innerHTML = pageTransferts(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
@@ -2465,11 +2541,8 @@ function openAchatSheet(editId, prefill){
       <div class="field"><label>Cartons</label>
         <input class="input" id="aCartons" type="number" inputmode="numeric" min="0" placeholder="0" value="${v?v.cartons:''}"></div>
       <div class="field"><label>Contenu / carton</label>
-        <select class="input" id="aContenu">
-          <option value="24" ${v&&v.contenu===24?'selected':''}>24</option>
-          <option value="12" ${v&&v.contenu===12?'selected':''}>12</option>
-          <option value="6" ${v&&v.contenu===6?'selected':''}>6</option>
-        </select></div>
+        <input class="input" id="aContenu" type="number" inputmode="numeric" min="1" placeholder="24" value="${v&&v.contenu?v.contenu:24}">
+        <div class="hint" style="margin-top:5px">Mettez n'importe quel nombre : 6, 12, 16, 20, 24…</div></div>
     </div>
 
     <div class="field">
@@ -2546,7 +2619,7 @@ function openAchatSheet(editId, prefill){
       produitNom: $('#aProduit').value.trim(),
       categorieId: $('#aCat').value,
       cartons: Number($('#aCartons').value)||0,
-      contenu: Number($('#aContenu').value)||0,
+      contenu: Number($('#aContenu').value)||24,
       prixGlobal,
       fournisseur: $('#aFourn').value.trim(),
       date: $('#aDate').value || auj()
@@ -2673,6 +2746,7 @@ function pagePlus(){
       <button class="btn btn-ghost" onclick="go('achatsjour')" style="margin-top:10px">📆 Achats par date</button>
       <button class="btn btn-ghost" onclick="go('epargne')" style="margin-top:10px">🐖 Mon épargne</button>
       <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
+      <button class="btn btn-ghost" onclick="go('rations')" style="margin-top:10px">🍚 Ration du vendeur</button>
       <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
       <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
       <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
@@ -2826,6 +2900,7 @@ function pageCaisse(){
           ? `<tr style="opacity:.5"><td>Fournisseurs payés par vous<div class="cat-meta">hors contrôle — payés de votre poche</div></td><td class="num">${fmtF(cmp.fournisseursPayes)}</td></tr>`
           : `<tr><td>− Fournisseurs payés</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.fournisseursPayes)}</td></tr>`}
         <tr><td>− Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.depenses)}</td></tr>
+        ${cmp.rations ? `<tr><td>− Ration du vendeur</td><td class="num" style="color:var(--rouge)">${fmtF(cmp.rations)}</td></tr>` : ''}
         <tr><td><b>= Devrait verser</b></td><td class="num" style="font-weight:800">${fmtF(cmp.duParVendeur)}</td></tr>
         <tr><td>Réellement versé</td><td class="num" style="color:var(--givre)">${fmtF(cmp.verse)}</td></tr>
       </table>
@@ -2841,6 +2916,7 @@ function pageCaisse(){
         `<div class="hint" style="color:var(--vert)">Tout correspond parfaitement.</div>`}
       ${cmp.duParVendeur<0 ? `<div class="hint" style="margin-top:6px">« Devrait verser » est négatif : il manque sûrement l'argent de la caisse que vous lui avez remis pour payer.</div>` : ''}
       ${(!cmp.fournisseursParPatron || (DB.apportsCaisse||[]).length) ? `<button class="btn btn-ghost btn-sm" onclick="openApportSheet()" style="margin-top:12px">➕ Argent de la caisse remis au vendeur</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="go('rations')" style="margin-top:8px">🍚 Ration du vendeur</button>
       ${(DB.apportsCaisse||[]).length ? `<div style="margin-top:10px">
         ${[...(DB.apportsCaisse||[])].sort((a,b)=> a.date<b.date?1:-1).map(a=>`<div class="cat-row">
           <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(a.montant)} ${DB.parametres.devise}</div>
@@ -2981,6 +3057,26 @@ function pageBenefice(){
       </table></div>
     </div>` : `
     <div class="empty"><div class="e-ic">📈</div><div>Aucune vente sur cette période</div></div>`}
+
+    ${(function(){
+      const mp = margeParProduit();
+      if(!mp.length) return '';
+      const dev = DB.parametres.devise;
+      return `<div class="card">
+        <div class="card-head"><div class="card-title">🏷️ Marge par produit</div></div>
+        <div class="hint" style="margin-bottom:10px">Calculée depuis vos achats réels : prix de vente − prix d'achat moyen.</div>
+        <div class="tbl-wrap"><table class="tbl" style="font-size:12.5px">
+          <tr><th>Produit</th><th class="num">Achat</th><th class="num">Vente</th><th class="num">Marge</th></tr>
+          ${mp.map(p=>`<tr>
+            <td>${p.nom}<div class="cat-meta">${p.categorie}${p.dernierCout!==p.coutMoyen?' • dernier achat '+fmt(p.dernierCout):''}</div></td>
+            <td class="num">${fmt(p.coutMoyen)}</td>
+            <td class="num">${fmt(p.prixVente)}</td>
+            <td class="num" style="font-weight:700;color:${p.marge>=0?'var(--vert)':'var(--rouge)'}">${fmt(p.marge)}<div class="cat-meta">${p.margePct}%</div></td>
+          </tr>`).join('')}
+        </table></div>
+        <div class="hint" style="margin-top:8px">Marge sur une unité. Un produit en rouge vous fait perdre de l'argent.</div>
+      </div>`;
+    })()}
 
     <div class="hint" style="text-align:center">Le coût d'achat vient du prix moyen payé pour chaque catégorie.</div>
   </div>`;
@@ -3287,6 +3383,7 @@ function blocDetailCaisse(){
       ${ligne('Paiements fournisseurs', d.fournisseurs, '-')}
       ${ligne('Dépenses', d.depenses, '-')}
       ${ligne('Remboursements emprunt', d.remboursements, '-')}
+      ${d.rations ? ligne('Ration du vendeur', d.rations, '-') : ''}
       ${d.epargneNette ? ligne('Mis de côté (épargne)', d.epargneNette, '-') : ''}
       ${ligne('Transferts avec le café', d.transfertsNet, 'transfert')}
       ${ligne('Régularisations', d.regularisations, 'reg')}
@@ -4046,11 +4143,7 @@ function rendreFactureSheet(){
       <div class="row2" style="margin-bottom:0">
         <div class="field" style="margin-bottom:8px"><input class="input" type="number" inputmode="numeric" placeholder="Cartons" value="${l.cartons}" oninput="factureMaj(${i},'cartons',this.value)"></div>
         <div class="field" style="margin-bottom:8px">
-          <select class="input" onchange="factureMaj(${i},'contenu',this.value)">
-            <option value="24" ${l.contenu==24?'selected':''}>24 / carton</option>
-            <option value="12" ${l.contenu==12?'selected':''}>12 / carton</option>
-            <option value="6" ${l.contenu==6?'selected':''}>6 / carton</option>
-          </select>
+          <input class="input" type="number" inputmode="numeric" min="1" placeholder="Contenu / carton" value="${l.contenu}" oninput="factureMaj(${i},'contenu',this.value)">
         </div>
       </div>
       <div class="field" style="margin-bottom:0">
@@ -5195,6 +5288,11 @@ async function verifierMiseAJourManuelle(){
 }
 try{
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') verifierMajSiBesoin(); });
+  // Quitter l'app (bouton home, changement d'application, fermeture) :
+  // on met la copie de secours à jour immédiatement.
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') forcerCopieSecours(); });
+  window.addEventListener('pagehide', forcerCopieSecours);
+  window.addEventListener('blur', forcerCopieSecours);
   setTimeout(verifierMajSiBesoin, 8000);   // après le démarrage, sans gêner l'affichage
 }catch(e){}
 /* ============================================================
@@ -5242,6 +5340,19 @@ function pageVentesJour(){
     </div>
     <div class="hint" style="margin-bottom:14px;text-align:center">Calculé par les inventaires : ${fmt(aujd?aujd.total:0)} aujourd'hui • ${fmt(totalSemaine)} cette semaine</div>
 
+    ${(function(){
+      const att = argentEnAttente();
+      if(att.ventes<=0) return '';
+      return `<div class="card" style="border-color:var(--ambre);background:rgba(251,191,36,.08);margin-bottom:14px">
+        <div class="card-title" style="font-size:14px;margin-bottom:6px;color:var(--ambre)">⏳ Argent en attente d'inventaire</div>
+        <div class="m-value mono" style="font-size:26px;margin-bottom:8px">${fmt(att.net)} ${dev}</div>
+        <div class="hint" style="line-height:1.6">
+          Ventes notées depuis ${att.depuis ? 'le '+dateFr(att.depuis) : 'le début'} : <b>${fmt(att.ventes)} ${dev}</b>${att.rations>0 ? `<br>− ration déjà donnée au vendeur : <b>${fmt(att.rations)} ${dev}</b>` : ''}
+        </div>
+        <div class="hint" style="margin-top:8px">Cet argent est chez votre vendeur. Il entrera en caisse à votre prochain inventaire.</div>
+        <button class="btn btn-ambre" onclick="go('inventaire')" style="margin-top:10px">📋 Faire l'inventaire maintenant</button>
+      </div>`;
+    })()}
     <button class="btn btn-ambre" onclick="openVenteJourSheet()" style="margin-bottom:16px">✍️ Saisir la vente du jour</button>
 
     ${(function(){
@@ -5327,6 +5438,25 @@ function openJourVentesSheet(date){
 /* Périodes couvertes par chaque inventaire.
    Un inventaire couvre tous les jours écoulés depuis le comptage précédent :
    c'est à cette échelle (et pas jour par jour) que la comparaison a un sens. */
+/* Argent que le vendeur détient et qui n'est pas encore entré en caisse.
+   Les ventes n'alimentent la caisse qu'au moment de l'inventaire : entre deux
+   comptages, ce que vous notez au jour le jour reste « en attente ».
+   Les rations déjà données sont retirées : cet argent, le vendeur l'a gardé. */
+function dateDernierInventaire(){
+  let d = null;
+  for(const inv of DB.inventaires){ if(!d || inv.date > d) d = inv.date; }
+  return d;
+}
+function argentEnAttente(){
+  const dep = dateDernierInventaire();
+  const apres = (dt)=> !dep || dt > dep;
+  let ventes = 0;
+  for(const v of (DB.ventesJour||[])){ if(apres(v.date)) ventes += v.montant; }
+  let rations = 0;
+  for(const r of (DB.rationsVendeur||[])){ if(apres(r.date)) rations += r.montant; }
+  return { depuis: dep, ventes, rations, net: ventes - rations };
+}
+
 function periodesInventaire(){
   const parDate = {};
   for(const inv of DB.inventaires){
@@ -5948,6 +6078,142 @@ function supprTransfertUI(id){
   go('transferts');
 }
 
+/* ============================================================
+   RATION DU VENDEUR
+   Ration journalière + paiement de fin de semaine.
+   Le vendeur garde cet argent sur les ventes : c'est une sortie de
+   caisse ET une déduction sur ce qu'il doit verser.
+   ============================================================ */
+function ajouterRation({date, montant, type, note}){
+  montant = Number(montant)||0;
+  if(montant<=0) return null;
+  if(!DB.rationsVendeur) DB.rationsVendeur = [];
+  const r = { id: uid('rat'), date: date||auj(), montant,
+    type: (type==='semaine' ? 'semaine' : 'jour'), note: nomSain(note) };
+  DB.rationsVendeur.push(r);
+  sauverDB();
+  return r;
+}
+function supprimerRation(id){
+  const r = (DB.rationsVendeur||[]).find(x=>x.id===id);
+  if(r) versCorbeille('ration', r, (r.type==='semaine'?'Paiement fin de semaine':'Ration')+' du '+dateFr(r.date)+' ('+fmt(r.montant)+' '+DB.parametres.devise+')');
+  DB.rationsVendeur = (DB.rationsVendeur||[]).filter(x=>x.id!==id);
+  sauverDB();
+}
+function totalRations(debut, fin, type){
+  const dans = (d)=> (!debut || d>=debut) && (!fin || d<=fin);
+  let t = 0;
+  for(const r of (DB.rationsVendeur||[])){
+    if(!dans(r.date)) continue;
+    if(type && r.type!==type) continue;
+    t += r.montant;
+  }
+  return t;
+}
+function rationDejaDonneeAujourdhui(){
+  return (DB.rationsVendeur||[]).some(r=>r.type==='jour' && r.date===auj());
+}
+
+function pageRations(){
+  const dev = DB.parametres.devise;
+  const per = periodeSemaine(auj());
+  const mvts = [...(DB.rationsVendeur||[])].sort((a,b)=> a.date<b.date?1:-1);
+  const totJour = totalRations(per.debut, per.fin, 'jour');
+  const totSem = totalRations(per.debut, per.fin, 'semaine');
+  const defaut = Number(DB.parametres && DB.parametres.rationJour)||0;
+  const deja = rationDejaDonneeAujourdhui();
+  return `
+  <div class="page">
+    <div class="page-title">🍚 Ration du vendeur</div>
+    <div class="page-sub">Ce que vous donnez au vendeur. Déduit de la caisse et de ce qu'il doit vous verser.</div>
+
+    <div class="metrics" style="margin-bottom:8px">
+      <div class="metric accent"><div class="m-label">Rations de la semaine</div><div class="m-value mono">${fmt(totJour)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">Fin de semaine</div><div class="m-value mono">${fmt(totSem)} ${dev}</div></div>
+    </div>
+    <div class="hint" style="margin-bottom:16px;text-align:center">Total donné cette semaine : <b>${fmt(totJour+totSem)} ${dev}</b></div>
+
+    ${defaut>0 ? `<button class="btn ${deja?'btn-ghost':'btn-ambre'}" onclick="rationDuJourRapide()" style="margin-bottom:10px">
+      ${deja ? "✓ Ration d'aujourd'hui déjà donnée" : '🍚 Donner la ration du jour ('+fmt(defaut)+' '+dev+')'}
+    </button>` : ''}
+    <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn btn-ghost" onclick="openRationSheet('jour')">🍚 Ration (autre montant)</button>
+      <button class="btn btn-ghost" onclick="openRationSheet('semaine')">📅 Paiement fin de semaine</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px">⚙️ Montant habituel de la ration</div>
+      <div class="row2">
+        <div class="field" style="margin-bottom:0">
+          <input class="input" id="ratDefaut" type="number" inputmode="numeric" placeholder="Ex: 1000" value="${defaut||''}"></div>
+        <button class="btn btn-ghost" onclick="enregistrerRationDefaut()">Enregistrer</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Une fois réglé, un seul bouton suffit chaque jour.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">Historique de la semaine</div>
+      ${mvts.length===0 ? '<div class="hint">Rien pour le moment</div>' :
+        mvts.map(r=>`<div class="cat-row">
+          <div class="cat-info"><div class="cat-name" style="font-size:14px">${r.type==='semaine'?'📅 Fin de semaine':'🍚 Ration du jour'}</div>
+          <div class="cat-meta">${dateFr(r.date)}${r.note?' • '+r.note:''}</div></div>
+          <span style="font-weight:700;color:var(--rouge)">−${fmt(r.montant)}</span>
+          <button class="btn btn-sm btn-ghost" onclick="supprRationUI('${r.id}')" style="margin-left:8px">🗑️</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function enregistrerRationDefaut(){
+  const v = Number($('#ratDefaut').value)||0;
+  if(!DB.parametres) DB.parametres = {};
+  DB.parametres.rationJour = Math.max(0, v);
+  sauverDB();
+  toast(v>0 ? 'Montant habituel enregistré ✓' : 'Montant habituel effacé');
+  go('rations');
+}
+function rationDuJourRapide(){
+  const m = Number(DB.parametres && DB.parametres.rationJour)||0;
+  if(m<=0){ toast("Réglez d'abord le montant habituel",'err'); return; }
+  if(rationDejaDonneeAujourdhui()){ toast("La ration d'aujourd'hui est déjà notée",'err'); return; }
+  ajouterRation({date:auj(), montant:m, type:'jour'});
+  toast('Ration du jour notée ✓');
+  go('rations');
+}
+function openRationSheet(type){
+  const dev = DB.parametres.devise;
+  const sem = (type==='semaine');
+  sheet(`
+    <h2>${sem ? '📅 Paiement de fin de semaine' : '🍚 Ration du vendeur'}</h2>
+    <div class="s-sub">${sem ? "Ce que vous donnez au vendeur en fin de semaine." : "Ce que vous donnez au vendeur pour la journée."} Cet argent sort de la caisse et sera déduit de ce qu'il doit verser.</div>
+    <div class="field"><label>Montant (${dev})</label>
+      <input class="input" id="ratMontant" type="number" inputmode="numeric" placeholder="Ex: ${sem?'10000':'1000'}"></div>
+    <div class="field"><label>Note (facultatif)</label>
+      <input class="input" id="ratNote" placeholder="${sem?'Ex: prime de la semaine':'Ex: repas'}"></div>
+    <div class="field"><label>Date</label>
+      <input class="input" id="ratDate" type="date" value="${auj()}"></div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="validerRation('${sem?'semaine':'jour'}')">Enregistrer</button>
+    </div>
+  `);
+}
+function validerRation(type){
+  const montant = Number($('#ratMontant').value)||0;
+  const note = $('#ratNote').value.trim();
+  const date = $('#ratDate').value || auj();
+  if(montant<=0){ toast('Indiquez le montant','err'); return; }
+  ajouterRation({date, montant, type, note});
+  toast('Enregistré ✓');
+  closeSheet();
+  go('rations');
+}
+function supprRationUI(id){
+  supprimerRation(id);
+  toast('Supprimé (dans la corbeille)');
+  go('rations');
+}
+
 function pageEpargne(){
   const dev = DB.parametres.devise;
   const mvts = [...(DB.epargne||[])].sort((a,b)=> a.date<b.date?1:-1);
@@ -6047,6 +6313,7 @@ function blocTableauBord(){
     <div class="card" style="margin-bottom:14px">
       <div class="card-head"><div class="card-title">📊 Tableau de bord — cette semaine</div></div>
       ${ligne('💵','Ventes', fmt(ventes)+' '+dev, saisi>0 ? 'saisi à la main : '+fmt(saisi)+' '+dev : 'calculé par vos inventaires', 'ventesjour', 'var(--vert)')}
+      ${(function(){ const a = argentEnAttente(); return a.net>0 ? ligne('⏳','En attente d\u2019inventaire', fmt(a.net)+' '+dev, 'chez le vendeur, pas encore en caisse', 'ventesjour', 'var(--ambre)') : ''; })()}
       ${ligne('🛒','Achats', fmt(achats)+' '+dev, reste>0 ? 'reste à payer : '+fmt(reste)+' '+dev : 'tout est payé ✓', 'achatsjour', reste>0?'var(--texte)':'var(--texte)')}
       ${ligne('💰','Solde en caisse', fmt(soldeCaisse())+' '+dev, 'argent disponible maintenant', 'caisse', 'var(--givre,#5EEAD4)')}
       ${ligne('🐖','Épargne', fmt(totalEpargne())+' '+dev, 'mis de côté (hors caisse)', 'epargne', 'var(--ambre)')}
