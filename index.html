@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="30-07-2026 v25 (Ration variable + Marge du jour ✓)">
+<meta name="frigo-version" content="02-08-2026 v31 (Historique détaillé ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -791,233 +791,6 @@ function supprimerAchat(id){
 // ============================================================
 /* lignes = [{produitNom, categorieId, cartons, contenu, prixGlobal}, ...]
    paiementMode = 'tout' | 'rien' | 'partiel' ; montantPartiel = nombre si partiel */
-function ajouterFacture({date, fournisseur, lignes, paiementMode, montantPartiel}){
-  date = date || auj();
-  let f = trouverOuCreerFournisseur(fournisseur);
-  if(!f) f = trouverOuCreerFournisseur('Divers');
-  const crees = [];
-  let total = 0;
-  for(const l of lignes){
-    const cartons = Number(l.cartons)||0;
-    const contenu = Number(l.contenu)||0;
-    const prixGlobal = Number(l.prixGlobal)||0;
-    const nom = (l.produitNom||'').trim();
-    if(!nom || prixGlobal<=0) continue;   // ignorer les lignes vides
-    const quantite = Math.max(0, Math.round(cartons * contenu));  // jamais de demi-bouteille
-    let prod = DB.produits.find(p=>p.nom.toUpperCase()===nom.toUpperCase());
-    if(!prod){ prod = { id: uid('prod'), nom, categorieId: l.categorieId }; DB.produits.push(prod); }
-    else prod.categorieId = l.categorieId;
-    const achat = {
-      id: uid('ach'), date, fournisseurId: f?f.id:null, fournisseur: f?f.nom:'',
-      produit: prod.nom, categorieId: l.categorieId, cartons, contenu, quantite,
-      prixGlobal, prixUnitaire: quantite>0?prixGlobal/quantite:0, montantPaye:0
-    };
-    DB.achats.push(achat);
-    crees.push(achat);
-    total += prixGlobal;
-  }
-  // Paiement de la facture
-  let paye = 0;
-  if(paiementMode==='tout') paye = total;
-  else if(paiementMode==='partiel') paye = Math.min(Number(montantPartiel)||0, total);
-  if(paye > 0){
-    // imputer sur les lignes de CETTE facture (première ligne d'abord)
-    let reste = paye;
-    for(const a of crees){
-      if(reste<=0) break;
-      const p = Math.min(reste, a.prixGlobal);
-      a.montantPaye = p; reste -= p;
-    }
-    // enregistrer le paiement dans la caisse (si fournisseur)
-    if(f){
-      DB.paiements.push({ id: uid('pay'), date, fournisseurId: f.id, achatId: null, montant: paye, note: 'Paiement facture' });
-    }
-  }
-  sauverDB();
-  return { crees, total, paye };
-}
-
-// ============================================================
-//  IMPORT CSV / EXCEL (achats en lot)
-// ============================================================
-/* Modèle CSV à télécharger (avec les catégories réelles en exemple) */
-function modeleCSVAchats(){
-  const nomCat = (id, defaut)=>{ const c = DB.categories.find(x=>x.id===id); return c ? c.nom : defaut; };
-  const cGrand = nomCat('grand','Grand Canette');
-  const cBram = nomCat('bramali','Bramali');
-  const cDiago = nomCat('diago','Diago');
-  return 'date;produit;categorie;cartons;contenu;prix;fournisseur;paye\n'
-    + '10/06/2026;COCA;'+cGrand+';2;24;13000;DIARRA;oui\n'
-    + '11/06/2026;BRAMALI;'+cBram+';5;24;24000;ACHOURA;non\n'
-    + '12/06/2026;DIAGO;'+cDiago+';1;12;4800;;oui\n';
-}
-
-/* Normaliser une date DD/MM/YYYY ou YYYY-MM-DD -> YYYY-MM-DD */
-function normaliserDate(s){
-  s = (s||'').trim();
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-  if(m){
-    let [_,j,mo,a] = m;
-    if(a.length===2) a = '20'+a;
-    return `${a}-${mo.padStart(2,'0')}-${j.padStart(2,'0')}`;
-  }
-  return auj();
-}
-
-/* Convertir un texte en nombre (retire espaces, séparateurs de milliers) */
-function versNombre(s){
-  if(typeof s === 'number') return s;
-  s = (s||'').toString().replace(/[^\d]/g,'');
-  return Number(s)||0;
-}
-
-/* Trouver une catégorie par son nom (souple) */
-function categorieParNom(nom){
-  const n = (nom||'').trim().toLowerCase();
-  if(!n) return null;
-  return DB.categories.find(c=>c.nom.trim().toLowerCase()===n)
-      || DB.categories.find(c=>c.nom.trim().toLowerCase().includes(n) || n.includes(c.nom.trim().toLowerCase()))
-      || null;
-}
-
-/* Analyser un texte CSV -> {lignes:[...], erreurs:[...]} (ne crée rien encore) */
-function analyserCSVAchats(texte){
-  const lignes = [];
-  const erreurs = [];
-  const rows = texte.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim()!=='');
-  if(rows.length===0) return { lignes, erreurs:['Fichier vide'] };
-  // détecter le séparateur (; ou , ou tabulation)
-  const first = rows[0];
-  const sep = (first.split(';').length > first.split(',').length) ? ';'
-            : (first.split('\t').length > first.split(',').length) ? '\t' : ',';
-  const split = (line)=> line.split(sep).map(c=>c.replace(/^"|"$/g,'').trim());
-  // en-têtes
-  const head = split(rows[0]).map(h=>h.toLowerCase());
-  const idx = (noms)=> { for(const n of noms){ const i = head.findIndex(h=>h===n || h.includes(n)); if(i>=0) return i; } return -1; };
-  const iDate = idx(['date']);
-  const iProd = idx(['produit','product','désignation','designation','nom']);
-  const iCat  = idx(['categorie','catégorie','category']);
-  const iCart = idx(['cartons','carton']);
-  const iCont = idx(['contenu','contenance','par carton','unite']);
-  const iPrix = idx(['prix','montant','total','prix global']);
-  const iFour = idx(['fournisseur','supplier']);
-  const iPaye = idx(['paye','payé','paiement','paye?']);
-  if(iProd<0 || iPrix<0){
-    return { lignes, erreurs:['Colonnes manquantes : il faut au minimum "produit" et "prix".'] };
-  }
-  for(let r=1; r<rows.length; r++){
-    const c = split(rows[r]);
-    const produitNom = (c[iProd]||'').trim();
-    const prix = versNombre(c[iPrix]);
-    if(!produitNom && prix<=0) continue; // ligne vide
-    if(!produitNom){ erreurs.push(`Ligne ${r+1}: produit manquant`); continue; }
-    if(prix<=0){ erreurs.push(`Ligne ${r+1}: prix invalide`); continue; }
-    // catégorie
-    const catBrut = iCat>=0 ? (c[iCat]||'').trim() : '';
-    let cat = iCat>=0 ? categorieParNom(catBrut) : null;
-    const categorieInconnue = (catBrut !== '' && !cat);
-    if(!cat) cat = DB.categories[0]; // défaut provisoire si non reconnue
-    // paiement
-    const payeTxt = (iPaye>=0 ? (c[iPaye]||'') : '').toString().trim().toLowerCase();
-    let paiement = 'tout';
-    if(['non','no','0','crédit','credit',''].includes(payeTxt)) paiement = (payeTxt==='' ? 'tout' : 'rien');
-    else if(['oui','yes','1','payé','paye','ok'].includes(payeTxt)) paiement = 'tout';
-    else if(versNombre(payeTxt)>0) paiement = 'partiel';
-    lignes.push({
-      date: iDate>=0 ? normaliserDate(c[iDate]) : auj(),
-      produitNom,
-      categorieId: cat ? cat.id : (DB.categories[0] && DB.categories[0].id),
-      categorieNom: cat ? cat.nom : '?',
-      categorieNomBrut: catBrut,
-      categorieInconnue,
-      cartons: iCart>=0 ? versNombre(c[iCart]) : 0,
-      contenu: iCont>=0 ? (versNombre(c[iCont])||24) : 24,
-      prixGlobal: prix,
-      fournisseur: iFour>=0 ? (c[iFour]||'').trim() : '',
-      paiement,
-      montantPartiel: paiement==='partiel' ? versNombre(payeTxt) : 0
-    });
-  }
-  // liste des catégories inconnues (noms uniques)
-  const inconnues = [...new Set(lignes.filter(l=>l.categorieInconnue).map(l=>l.categorieNomBrut))];
-  return { lignes, erreurs, categoriesInconnues: inconnues };
-}
-
-/* Importer réellement les lignes analysées -> crée les achats */
-function importerAchats(lignes){
-  let n = 0;
-  _sauvegardeEnPause = true;   // on n'enregistre pas à chaque ligne
-  try{
-    for(const l of lignes){
-      ajouterAchat({
-        date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom,
-        categorieId: l.categorieId, cartons: l.cartons, contenu: l.contenu,
-        prixGlobal: l.prixGlobal,
-        montantPaye: l.paiement==='tout' ? l.prixGlobal : (l.paiement==='partiel' ? l.montantPartiel : 0)
-      });
-      n++;
-    }
-  } finally {
-    _sauvegardeEnPause = false;
-    sauverDB();               // une seule écriture pour tout l'import
-  }
-  return n;
-}
-
-// ============================================================
-//  LECTURE DIRECTE DES FICHIERS EXCEL (.xlsx) via JSZip
-// ============================================================
-function _colToNum(letters){ let n=0; for(let i=0;i<letters.length;i++){ n=n*26+(letters.charCodeAt(i)-64);} return n; }
-function _decodeXml(s){
-  return s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')
-          .replace(/&apos;/g,"'").replace(/&#(\d+);/g,(_,d)=>String.fromCharCode(+d)).replace(/&amp;/g,'&');
-}
-/* Lit un ArrayBuffer .xlsx et renvoie un texte tabulé (comme un CSV) de la 1re feuille */
-async function xlsxVersTexte(arrayBuffer){
-  if(!(await chargerJSZip())) throw new Error("Lecteur Excel indisponible : connectez-vous à internet une fois pour l'activer");
-  const zip = await JSZip.loadAsync(arrayBuffer);
-  let shared = [];
-  const ss = zip.file('xl/sharedStrings.xml');
-  if(ss){
-    const xml = await ss.async('string');
-    shared = [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)]
-      .map(m=>[...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(t=>_decodeXml(t[1])).join(''));
-  }
-  let sheetFile = zip.file('xl/worksheets/sheet1.xml');
-  if(!sheetFile){ const fs = zip.file(/xl\/worksheets\/.*\.xml/); sheetFile = fs && fs[0]; }
-  if(!sheetFile) throw new Error('Feuille introuvable dans le fichier Excel');
-  const xml = await sheetFile.async('string');
-  const rows = [];
-  const rowRe = /<row\b[^>]*>([\s\S]*?)<\/row>/g; let rm;
-  while((rm = rowRe.exec(xml))){
-    const cells = {}; let maxCol = 0;
-    const cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g; let cm;
-    while((cm = cellRe.exec(rm[1]))){
-      const attrs = cm[1], inner = cm[2]||'';
-      const refM = attrs.match(/r="([A-Z]+)\d+"/); if(!refM) continue;
-      const col = _colToNum(refM[1]); if(col>maxCol) maxCol = col;
-      const tM = attrs.match(/t="([^"]+)"/); const t = tM ? tM[1] : 'n';
-      let val = '';
-      if(t==='inlineStr'){ const im = inner.match(/<t[^>]*>([\s\S]*?)<\/t>/); val = im ? _decodeXml(im[1]) : ''; }
-      else if(t==='s'){ const vm = inner.match(/<v>([\s\S]*?)<\/v>/); val = vm ? (shared[parseInt(vm[1],10)]||'') : ''; }
-      else { const vm = inner.match(/<v>([\s\S]*?)<\/v>/); val = vm ? _decodeXml(vm[1]) : ''; }
-      cells[col] = val;
-    }
-    const arr = []; for(let c=1;c<=maxCol;c++) arr.push(cells[c]!==undefined?cells[c]:'');
-    rows.push(arr);
-  }
-  // garder seulement les lignes non vides, joindre par tabulation
-  return rows.filter(r=>r.some(c=>String(c).trim()!=='')).map(r=>r.join('\t')).join('\n');
-}
-
-// ============================================================
-//  FOURNISSEURS & PAIEMENTS (comptes fournisseurs)
-// ============================================================
-
-/* Enregistrer un paiement à un fournisseur.
-   Si achatId fourni → impute sur cet achat en priorité.
-   Sinon → impute sur les achats les plus anciens non soldés (FIFO). */
 function enregistrerPaiement({date, fournisseurId, achatId, montant, note}){
   montant = Number(montant)||0;
   if(montant<=0 || !fournisseurId) return null;
@@ -1296,10 +1069,11 @@ function stats(){
    Chaque mouvement a un solde cumulé. */
 function mouvementsCaisse(){
   const mvts = [];
-  // Solde de départ (première ligne, si défini)
-  if(DB.soldeDepartCaisse && DB.soldeDepartCaisse > 0){
-    mvts.push({ date:'0000-00-00', heure:'', type:'depart', sens:'+',
-      libelle:'Solde de départ', montant: DB.soldeDepartCaisse, ref:'depart', fixe:true });
+  // Solde de départ (première ligne, si défini — y compris négatif : la caisse
+  // peut démarrer à découvert après une semaine où les sorties ont dépassé les ventes)
+  if(DB.soldeDepartCaisse){
+    mvts.push({ date:'0000-00-00', heure:'', type:'depart', sens: DB.soldeDepartCaisse>0 ? '+' : '-',
+      libelle:'Solde de départ', montant: Math.abs(DB.soldeDepartCaisse), ref:'depart', fixe:true });
   }
   // Ventes (une entrée par inventaire)
   for(const inv of DB.inventaires){
@@ -1410,7 +1184,6 @@ function resumeSemaineActuelle(){
     benefice: ben.benefice,
     cafeVentes: cafe.ventes, cafeAchats: cafe.achats, cafeResultat: cafe.resultat,
     cafeSoldeTotal: cafe.soldeTotal,
-    transfertsNet: totalTransfertsNet(),
     soldeCaisseFin: soldeCaisse(), valeurStock,
     detteFournisseurs: totalDettesFournisseurs(),
     creancesClients: totalCreancesClients(),
@@ -1464,7 +1237,19 @@ function cloturerSemaine({comptesStock, caisseReelle}){
   // 0) Archiver le résumé de la semaine AVANT d'effacer
   const resume = resumeSemaineActuelle();
   if(!DB.archivesSemaines) DB.archivesSemaines = [];
-  DB.archivesSemaines.push({ id: uid('sem'), cloturLe: auj(), ...resume });
+  DB.archivesSemaines.push({ id: uid('sem'), cloturLe: auj(), ...resume,
+    // Détail complet, gardé à part du résumé : chaque achat, chaque inventaire,
+    // chaque mouvement café de la semaine — pour pouvoir la revoir plus tard.
+    detail: {
+      achats: (DB.achats||[]).filter(a=>!a.reporte).map(a=>({date:a.date, fournisseur:a.fournisseur, produit:a.produit, categorieId:a.categorieId, quantite:a.quantite, prixGlobal:a.prixGlobal, montantPaye:a.montantPaye})),
+      inventaires: (DB.inventaires||[]).map(inv=>({date:inv.date, heure:inv.heure, totalCA:inv.totalCA, lignes:inv.lignes})),
+      ventesJour: (DB.ventesJour||[]).map(v=>({date:v.date, montant:v.montant, note:v.note})),
+      cafeVentesDetail: (DB.cafeVentes||[]).map(v=>({date:v.date, montant:v.montant, note:v.note})),
+      cafeAchatsDetail: (DB.cafeAchats||[]).map(a=>({date:a.date, article:a.article, montant:a.montant})),
+      depenses: (DB.depenses||[]).map(d=>({date:d.date, motif:d.motif, montant:d.montant})),
+      rations: (DB.rationsVendeur||[]).map(r=>({date:r.date, montant:r.montant, type:r.type}))
+    }
+  });
   // 1) Capturer les dettes AVANT d'effacer
   const dettesFournisseurs = [];
   for(const f of DB.fournisseurs){
@@ -1769,54 +1554,11 @@ function supprimerRegularisation(id){
 // ============================================================
 //  CLIENTS À CRÉDIT (qui vous doit de l'argent)
 // ============================================================
-function trouverOuCreerClient(nom){
-  const n = nomSain(nom);
-  if(!n) return null;
-  let c = DB.clients.find(x=>x.nom.toUpperCase()===n.toUpperCase());
-  if(!c){ c = { id: uid('cli'), nom: n, tel: '' }; DB.clients.push(c); }
-  return c;
-}
-
-/* Accorder un crédit à un client (il prend pour X francs sans payer) */
-function ajouterCreance({date, clientNom, montant, note}){
-  montant = Number(montant)||0;
-  if(montant<=0) return null;
-  const c = trouverOuCreerClient(clientNom);
-  if(!c) return null;
-  const cr = { id: uid('cre'), date: date||auj(), clientId: c.id, montant, note: (note||'').trim() };
-  DB.creances.push(cr);
-  sauverDB();
-  return cr;
-}
-
-/* Enregistrer un remboursement du client */
-function payerClient({date, clientId, montant, note}){
-  montant = Number(montant)||0;
-  if(montant<=0 || !clientId) return null;
-  const reste = soldeClient(clientId);
-  if(reste<=0) return null;              // rien à payer
-  if(montant > reste) montant = reste;   // ne pas encaisser plus que le dû
-  const p = { id: uid('rcli'), date: date||auj(), clientId, montant, note:(note||'').trim() };
-  DB.paiementsClients.push(p);
-  sauverDB();
-  return p;
-}
-
 function soldeClient(clientId){
   let du = 0, paye = 0;
   for(const cr of DB.creances){ if(cr.clientId===clientId) du += cr.montant; }
   for(const p of DB.paiementsClients){ if(p.clientId===clientId) paye += p.montant; }
   return du - paye;
-}
-
-function infosClient(clientId){
-  const c = DB.clients.find(x=>x.id===clientId);
-  if(!c) return null;
-  const creances = DB.creances.filter(x=>x.clientId===clientId);
-  const paiements = DB.paiementsClients.filter(x=>x.clientId===clientId);
-  const totalCredit = creances.reduce((s,x)=>s+x.montant,0);
-  const totalPaye = paiements.reduce((s,x)=>s+x.montant,0);
-  return { ...c, creances, paiements, totalCredit, totalPaye, solde: totalCredit-totalPaye };
 }
 
 function totalCreancesClients(){
@@ -1828,35 +1570,6 @@ function totalCreancesClients(){
 // ============================================================
 /* Créer un emprunt. montantARembourser = total à rembourser (avec intérêts éventuels);
    par défaut = montant emprunté. */
-function ajouterEmprunt({date, preteur, motif, montant, montantARembourser}){
-  montant = Number(montant)||0;
-  if(montant<=0) return null;
-  let total = Number(montantARembourser)||0;
-  if(total<=0) total = montant;   // pas d'intérêts précisés
-  const e = {
-    id: uid('emp'), date: date||auj(),
-    preteur: (preteur||'').trim() || 'Prêteur',
-    motif: (motif||'').trim(),
-    montant, montantARembourser: total
-  };
-  DB.emprunts.push(e);
-  sauverDB();
-  return e;
-}
-
-/* Enregistrer un remboursement (sort de la caisse) */
-function rembourserEmprunt({date, empruntId, montant, note}){
-  montant = Number(montant)||0;
-  if(montant<=0 || !empruntId) return null;
-  const reste = soldeEmprunt(empruntId);
-  if(reste<=0) return null;              // déjà soldé
-  if(montant > reste) montant = reste;   // ne pas rembourser plus que le dû
-  const r = { id: uid('remb'), date: date||auj(), empruntId, montant, note:(note||'').trim() };
-  DB.remboursementsEmprunt.push(r);
-  sauverDB();
-  return r;
-}
-
 function soldeEmprunt(empruntId){
   const e = DB.emprunts.find(x=>x.id===empruntId);
   if(!e) return 0;
@@ -1865,32 +1578,10 @@ function soldeEmprunt(empruntId){
   return e.montantARembourser - rembourse;
 }
 
-function infosEmprunt(empruntId){
-  const e = DB.emprunts.find(x=>x.id===empruntId);
-  if(!e) return null;
-  const remboursements = DB.remboursementsEmprunt.filter(r=>r.empruntId===empruntId)
-    .sort((a,b)=> a.date<b.date?1:-1);
-  const totalRembourse = remboursements.reduce((s,r)=>s+r.montant,0);
-  return { ...e, remboursements, totalRembourse, solde: e.montantARembourser - totalRembourse };
-}
-
 function totalDettesEmprunts(){
   return (DB.emprunts||[]).reduce((s,e)=> s + Math.max(0, soldeEmprunt(e.id)), 0);
 }
 
-function supprimerEmprunt(id){
-  const e = DB.emprunts.find(x=>x.id===id);
-  if(e) versCorbeille('emprunt', {emprunt:e, remboursements: DB.remboursementsEmprunt.filter(r=>r.empruntId===id)},
-    'Emprunt : '+e.preteur+' ('+fmt(e.montant)+' '+DB.parametres.devise+')');
-  DB.emprunts = DB.emprunts.filter(x=>x.id!==id);
-  DB.remboursementsEmprunt = DB.remboursementsEmprunt.filter(r=>r.empruntId!==id);
-  sauverDB();
-}
-
-// ============================================================
-//  SUIVI CAFÉ (activité séparée : achats, ventes, résultat)
-// ============================================================
-/* Vente café = argent rapporté par le vendeur (versement) */
 function ajouterVenteCafe({date, montant, note}){
   montant = Number(montant)||0;
   if(montant<=0) return null;
@@ -2078,7 +1769,12 @@ function donneesExportComplet(){
   DB.fournisseurs.forEach(f=>{ const i=infosFournisseur(f.id); fourn.push([f.nom, i.totalAchats, i.totalPaye, i.solde]); });
   // Clients
   const clients = [['Client','Total crédit','Payé','Reste dû']];
-  DB.clients.forEach(c=>{ const i=infosClient(c.id); clients.push([c.nom, i.totalCredit, i.totalPaye, i.solde]); });
+  DB.clients.forEach(c=>{
+    let credit = 0, paye = 0;
+    for(const cr of (DB.creances||[])){ if(cr.clientId===c.id) credit += cr.montant; }
+    for(const p of (DB.paiementsClients||[])){ if(p.clientId===c.id) paye += p.montant; }
+    clients.push([c.nom, credit, paye, credit-paye]);
+  });
   // Stock actuel
   const stock = [['Catégorie','Prix vente','Stock','Valeur ('+dev+')']];
   DB.categories.forEach(c=>{ const stk=stockCategorie(c.id); stock.push([c.nom, c.prix, stk, stk>0?stk*c.prix:0]); });
@@ -2236,8 +1932,8 @@ function renderApp(){
     <div class="navbar">
       ${navItem('accueil','🏠','Accueil')}
       ${navItem('caisse','💰','Caisse')}
-      ${navItem('inventaire','📋','Inventaire')}
-      ${navItem('achats','📥','Achats')}
+      ${navItem('ventes','💵','Vente')}
+      ${navItem('achats','📥','Achat')}
       ${navItem('plus','⋯','Plus')}
     </div>`;
 
@@ -2263,18 +1959,17 @@ function go(page){
   else if(page==='caisse') { c.innerHTML = pageCaisse(); bindCaisse && bindCaisse(); }
   else if(page==='inventaire') { c.innerHTML = pageInventaire(); bindInventaire(); }
   else if(page==='achats') { c.innerHTML = pageAchats(); }
+  else if(page==='ventes') { c.innerHTML = pageVentes(); }
   else if(page==='stock') c.innerHTML = pageStock();
   else if(page==='fournisseurs') { c.innerHTML = pageFournisseurs(); bindFournisseurs && bindFournisseurs(); }
-  else if(page==='clients') { c.innerHTML = pageClients(); }
-  else if(page==='emprunts') { c.innerHTML = pageEmprunts(); }
   else if(page==='cafe') { c.innerHTML = pageCafe(); }
   else if(page==='ventesjour') { c.innerHTML = pageVentesJour(); }
   else if(page==='achatsjour') { c.innerHTML = pageAchatsJour(); }
   else if(page==='epargne') { c.innerHTML = pageEpargne(); }
   else if(page==='transferts') { c.innerHTML = pageTransferts(); }
   else if(page==='rations') { c.innerHTML = pageRations(); }
-  else if(page==='transferts') { c.innerHTML = pageTransferts(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
+  else if(page==='semaineDetail') { c.innerHTML = pageSemaineDetail(); }
   else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
   else if(page==='plus') { c.innerHTML = pagePlus(); bindPlus(); }
@@ -2323,6 +2018,7 @@ function pageAccueil(){
       </div>
     </div>
 
+    ${blocVentesNonComptees()}
     ${blocAlerteSauvegarde()}
     ${blocTableauBord()}
     ${blocDetailCaisse()}
@@ -2393,6 +2089,8 @@ function pageInventaire(){
   <div class="page">
     <div class="page-title">Inventaire du jour</div>
     <div class="page-sub">Comptez le stock restant. La vente se calcule toute seule.</div>
+
+    ${barrePole('vente','inventaire')}
 
     <div class="card">
       <div class="card-head">
@@ -2477,16 +2175,16 @@ function pageAchats(){
   <div class="page">
     <div class="page-title">Achats</div>
     <div class="page-sub">Enregistrez ce qui entre au frigo.</div>
+
+    ${barrePole('achat','achats')}
     <div class="hint" style="margin-bottom:14px">💰 Argent disponible en caisse : <b>${fmt(soldeCaisse())} ${DB.parametres.devise}</b></div>
 
     <div class="card">
       <div class="btn-group" style="flex-wrap:wrap">
         <button class="btn btn-ambre" onclick="openAchatSheet()">➕ Un produit</button>
-        <button class="btn btn-ambre" onclick="openFactureSheet()">🧾 Facture (plusieurs)</button>
       </div>
       <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
         ${dernier ? `<button class="btn btn-ghost" onclick="refaireDernierAchat()">🔁 Refaire le dernier</button>` : ''}
-        <button class="btn btn-ghost" onclick="openImportSheet()">📥 Importer (CSV/Excel)</button>
         <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
         <button class="btn btn-ghost" onclick="go('achatsjour')">📆 Achats par date</button>
       </div>
@@ -2671,6 +2369,51 @@ function openAchatSheet(editId, prefill){
 }
 
 // ---------- PAGE STOCK ----------
+/* ============================================================
+   ORGANISATION EN 3 POLES
+   Vente / Achat / Caisse : chaque page de la famille affiche la
+   meme barre, on passe de l'une a l'autre sans repasser par Plus.
+   ============================================================ */
+const POLES = {
+  vente:  [['ventes','💵 Vue vente'],['inventaire','📋 Inventaire'],['ventesjour','📅 Jour par jour'],['benefice','📈 Bénéfice'],['graphiques','📊 Graphiques']],
+  achat:  [['achats','📥 Saisir achat'],['achatsjour','📆 Par date'],['fournisseurs','🏢 Fournisseurs'],['stock','📦 Stock']],
+  caisse: [['caisse','💰 Caisse'],['epargne','🐖 Épargne'],['rations','🍚 Ration'],['transferts','🔄 Café']]
+};
+function barrePole(pole, actif){
+  const items = POLES[pole] || [];
+  return `<div class="swipe-x" style="margin-bottom:16px">${
+    items.map(([id, lb]) => `<button class="chip${id===actif?' on':''}" onclick="go('${id}')">${lb}</button>`).join('')
+  }</div>`;
+}
+
+function pageVentes(){
+  const dev = DB.parametres.devise;
+  const per = periodeSemaine(auj());
+  let ventes = 0; for(const inv of DB.inventaires){ if(inv.date>=per.debut && inv.date<=per.fin) ventes += inv.totalCA; }
+  const dern = dateDernierInventaire();
+  const b = beneficePeriode(per.debut, per.fin);
+  return `
+  <div class="page">
+    <div class="page-title">💵 Vente</div>
+    <div class="page-sub">Tout ce qui concerne vos ventes au même endroit.</div>
+
+    ${barrePole('vente','ventes')}
+
+    <div class="metrics" style="margin-bottom:8px">
+      <div class="metric accent"><div class="m-label">Ventes cette semaine</div><div class="m-value mono">${fmt(ventes)} ${dev}</div></div>
+      <div class="metric"><div class="m-label">Bénéfice</div><div class="m-value mono">${fmt(b.benefice)} ${dev}</div></div>
+    </div>
+    <div class="hint" style="margin-bottom:16px;text-align:center">${dern ? 'Dernier inventaire : '+dateFr(dern) : "Aucun inventaire pour l'instant"}</div>
+
+    ${blocVentesNonComptees()}
+
+    <button class="btn btn-ambre" onclick="go('inventaire')" style="margin-bottom:10px">📋 Faire l'inventaire (enregistrer les ventes)</button>
+    <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-bottom:10px">📅 Ventes jour par jour</button>
+    <button class="btn btn-ghost" onclick="go('benefice')" style="margin-bottom:10px">📈 Bénéfice et marges par produit</button>
+    <button class="btn btn-ghost" onclick="go('graphiques')" style="margin-bottom:10px">📊 Graphiques</button>
+  </div>`;
+}
+
 function pageStock(){
   const s = stats();
   return `
@@ -2678,12 +2421,7 @@ function pageStock(){
     <div class="page-title">Stock détaillé</div>
     <div class="page-sub">État actuel par catégorie. Touchez une catégorie pour voir/modifier ses produits.</div>
 
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
-      <button class="chip on" onclick="go('stock')">📦 Stock</button>
-    </div>
+    ${barrePole('achat','stock')}
 
     <div class="metrics">
       <div class="metric accent">
@@ -2704,7 +2442,7 @@ function pageStock(){
         const st = statutStock(stk, c.seuil);
         const val = stk>0 ? stk * c.prix : 0;
         const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
-        return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
+        return `<div class="cat-row" onclick="openCategorieContenu('${c.id}')">
           <span class="cat-dot" style="background:${c.couleur}"></span>
           <div class="cat-info">
             <div class="cat-name">${c.nom}</div>
@@ -2747,65 +2485,28 @@ function pagePlus(){
     </div>
 
     <div class="card">
-      <div class="card-head"><div class="card-title">📊 Comptabilité</div></div>
-      <div class="btn-group" style="flex-wrap:wrap">
-        <button class="btn btn-ghost" onclick="go('caisse')">💰 Caisse</button>
-        <button class="btn btn-ghost" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
+      <div class="card-head"><div class="card-title">🗂️ Où trouver quoi</div></div>
+      <div class="hint" style="line-height:1.9;margin-bottom:10px">
+        <b>💵 Vente</b> — inventaire, jour par jour, bénéfice, graphiques<br>
+        <b>📥 Achat</b> — saisie, par date, fournisseurs, stock<br>
+        <b>💰 Caisse</b> — détail, épargne, ration, transferts<br>
+        <span style="opacity:.8">Utilisez la barre du bas, puis la barre du haut dans chaque pôle.</span>
       </div>
-      <div class="btn-group" style="margin-top:10px">
-        <button class="btn btn-ghost" onclick="go('benefice')">📈 Bénéfice</button>
-        <button class="btn btn-ghost" onclick="go('stock')">📦 Stock</button>
-      </div>
-      <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-top:10px">📅 Ventes journalières</button>
-      <button class="btn btn-ghost" onclick="go('achatsjour')" style="margin-top:10px">📆 Achats par date</button>
-      <button class="btn btn-ghost" onclick="go('epargne')" style="margin-top:10px">🐖 Mon épargne</button>
-      <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
-      <button class="btn btn-ghost" onclick="go('rations')" style="margin-top:10px">🍚 Ration du vendeur</button>
-      <button class="btn btn-ghost" onclick="go('transferts')" style="margin-top:10px">🔄 Transferts caisse ↔ café</button>
-      <button class="btn btn-ghost" onclick="go('emprunts')" style="margin-top:10px">🏦 Emprunts / Prêts</button>
-      <button class="btn btn-ghost" onclick="go('cafe')" style="margin-top:10px">☕ Suivi Café</button>
+      <button class="btn btn-ghost" onclick="go('cafe')">☕ Suivi Café (activité à part)</button>
     </div>
 
     <div class="card">
       <div class="card-head"><div class="card-title">🧰 Outils</div></div>
       <div class="btn-group" style="flex-wrap:wrap">
-        <button class="btn btn-ghost" onclick="go('clients')">👥 Clients à crédit</button>
-        <button class="btn btn-ghost" onclick="go('graphiques')">📊 Graphiques</button>
-      </div>
-      <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
         <button class="btn btn-ghost" onclick="openCorbeilleSheet()">🗑️ Corbeille${(DB.corbeille&&DB.corbeille.length)?' ('+DB.corbeille.length+')':''}</button>
       </div>
       <button class="btn btn-ghost" onclick="exporterExcelComplet()" style="margin-top:10px">📤 Exporter tout en Excel</button>
     </div>
 
-    <div class="card">
-      <div class="card-head"><div class="card-title">🎬 Stock de départ</div></div>
-      ${DB.stockDepart ?
-        `<div class="hint" style="margin-bottom:10px">Défini le ${dateFr(DB.stockDepart.date)}. Modifiez si besoin.</div>` :
-        `<div class="hint" style="margin-bottom:10px">Saisissez votre stock actuel pour démarrer avec des calculs justes.</div>`}
-      <button class="btn btn-ambre" id="btnStockDepart">
-        ${DB.stockDepart ? '✏️ Modifier le stock de départ' : '🎬 Saisir mon stock de départ'}
-      </button>
-    </div>
+    
 
-    <div class="card">
-      <div class="card-head"><div class="card-title">🏷️ Catégories & produits</div>
-        <button class="btn btn-sm btn-ghost" id="addCat">+ Ajouter</button></div>
-      <div class="hint" style="margin-bottom:10px">Touchez une catégorie pour voir/gérer ses produits.</div>
-      <div id="catList">
-        ${DB.categories.map(c=>{
-          const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
-          const stk = stockCategorie(c.id);
-          return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
-            <span class="cat-dot" style="background:${c.couleur}"></span>
-            <div class="cat-info"><div class="cat-name">${c.nom}</div>
-            <div class="cat-meta">${c.prix} ${DB.parametres.devise} • ${nbProd} produit(s) • stock ${fmt(stk)}</div></div>
-            <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();openCatEdit('${c.id}')">✏️</button>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
+    
 
     <div class="card">
       <div class="card-head"><div class="card-title">💸 Dépenses & versements</div></div>
@@ -2825,33 +2526,61 @@ function pagePlus(){
       </table></div>`:''}
     </div>
 
-    <div class="card">
-      <div class="card-head"><div class="card-title">💾 Données</div></div>
-      <div class="btn-group">
-        <button class="btn btn-ghost" id="btnExport">📤 Exporter</button>
-        <button class="btn btn-ghost" id="btnImport">📥 Importer</button>
-      </div>
-      <input type="file" id="importFile" accept=".json" style="display:none">
-      <div class="divider"></div>
-      <button class="btn btn-danger" id="btnReset">🗑️ Réinitialiser tout</button>
-      <div class="hint">Exportez régulièrement pour sauvegarder vos données.</div>
-    </div>
 
-    <div class="card">
+    
+
+    
+
+    <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
+
+    <details style="margin-bottom:14px">
+      <summary style="cursor:pointer;padding:14px;background:var(--carte,#131C2B);border:1px solid var(--bord,#243044);border-radius:14px;font-weight:700;font-size:15px;list-style:none">⚙️ Réglages et outils avancés</summary>
+      <div style="margin-top:10px">
+<div class="card">
+      <div class="card-head"><div class="card-title">🎬 Stock de départ</div></div>
+      ${DB.stockDepart ?
+        `<div class="hint" style="margin-bottom:10px">Défini le ${dateFr(DB.stockDepart.date)}. Modifiez si besoin.</div>` :
+        `<div class="hint" style="margin-bottom:10px">Saisissez votre stock actuel pour démarrer avec des calculs justes.</div>`}
+      <button class="btn btn-ambre" id="btnStockDepart">
+        ${DB.stockDepart ? '✏️ Modifier le stock de départ' : '🎬 Saisir mon stock de départ'}
+      </button>
+    </div>
+<div class="card">
+      <div class="card-head"><div class="card-title">🏷️ Catégories & produits</div>
+        <button class="btn btn-sm btn-ghost" id="addCat">+ Ajouter</button></div>
+      <div class="hint" style="margin-bottom:10px">Touchez une catégorie pour voir/gérer ses produits.</div>
+      <div id="catList">
+        ${DB.categories.map(c=>{
+          const nbProd = DB.produits.filter(p=>p.categorieId===c.id).length;
+          const stk = stockCategorie(c.id);
+          return `<div class="cat-row" style="cursor:pointer" onclick="openCategorieContenu('${c.id}')">
+            <span class="cat-dot" style="background:${c.couleur}"></span>
+            <div class="cat-info"><div class="cat-name">${c.nom}</div>
+            <div class="cat-meta">${c.prix} ${DB.parametres.devise} • ${nbProd} produit(s) • stock ${fmt(stk)}</div></div>
+            <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();openCatEdit('${c.id}')">✏️</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+<div class="card">
       <div class="card-head"><div class="card-title">🔐 Sécurité</div></div>
       <button class="btn btn-ghost" id="btnChangePin" style="margin-bottom:10px">🔑 Changer mon code PIN</button>
       <button class="btn btn-ghost" onclick="lockApp()">🔒 Verrouiller maintenant</button>
       <div class="hint" style="margin-top:8px">Le code est aussi redemandé automatiquement quand vous rouvrez l'app.</div>
     </div>
-
-    <div class="card">
+<div class="card">
       <div class="card-head"><div class="card-title">⚙️ Boutique</div></div>
       <div class="field"><label>Nom de la boutique</label>
         <input class="input" id="setBoutique" value="${DB.parametres.boutique}"></div>
       <button class="btn btn-primary btn-sm" id="saveSet">Enregistrer</button>
     </div>
-
-    <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:20px 0">
+        <div class="card">
+          <div class="card-head"><div class="card-title">🗑️ Remise à zéro</div></div>
+          <button class="btn btn-danger" id="btnReset">🗑️ Réinitialiser tout</button>
+          <div class="hint">Efface toutes vos données. Sauvegardez avant !</div>
+        </div>
+      </div>
+    </details>
     <button class="btn btn-ghost" onclick="verifierMiseAJourManuelle()" style="margin:14px 0 0">🔄 Vérifier les mises à jour</button>
     <div style="text-align:center;color:var(--texte-faible);font-size:12px;margin:14px 0 20px">
       FRIGO • version ${versionApp()} • Vos données restent sur votre téléphone
@@ -2885,12 +2614,9 @@ function pageCaisse(){
       </div>
     </div>
 
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip on" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
-      <button class="chip" onclick="go('stock')">📦 Stock</button>
-    </div>
+    ${blocVentesNonComptees()}
+
+    ${barrePole('caisse','caisse')}
 
     <button class="btn btn-ambre" onclick="openRegulariserCaisseSheet()" style="margin-bottom:16px">⚖️ Régulariser la caisse (compter l'argent réel)</button>
     <button class="btn btn-ghost" onclick="go('transferts')" style="margin-bottom:16px">🔄 Transférer avec le café</button>
@@ -2982,12 +2708,7 @@ function pageFournisseurs(){
     <div class="page-title">🏢 Fournisseurs</div>
     <div class="page-sub">Comptes et soldes à payer.</div>
 
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip on" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
-      <button class="chip" onclick="go('stock')">📦 Stock</button>
-    </div>
+    ${barrePole('achat','fournisseurs')}
 
     <div class="metric danger" style="margin-bottom:16px">
       <div class="m-label">Total à payer</div>
@@ -3030,12 +2751,7 @@ function pageBenefice(){
     <div class="page-title">📈 Bénéfice</div>
     <div class="page-sub">Marge réelle : prix de vente − prix d'achat.</div>
 
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip on" onclick="go('benefice')">📈 Bénéfice</button>
-      <button class="chip" onclick="go('stock')">📦 Stock</button>
-    </div>
+    ${barrePole('vente','benefice')}
 
     <div class="seg">
       <button class="${BENEFICE_PERIODE==='jour'?'on':''}" onclick="setBeneficePeriode('jour')">Jour</button>
@@ -3107,48 +2823,6 @@ function setBeneficePeriode(p){ BENEFICE_PERIODE = p; go('benefice'); }
    ============================================================ */
 
 // ---------- PAGE CLIENTS À CRÉDIT ----------
-function pageClients(){
-  const clients = (DB.clients||[]).map(c=>infosClient(c.id)).sort((a,b)=> b.solde - a.solde);
-  const totalDu = totalCreancesClients();
-  return `
-  <div class="page">
-    <div class="page-title">👥 Clients à crédit</div>
-    <div class="page-sub">Qui vous doit de l'argent.</div>
-
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip on" onclick="go('clients')">👥 Clients</button>
-      <button class="chip" onclick="go('graphiques')">📊 Graphiques</button>
-    </div>
-
-    <div class="metric gold" style="margin-bottom:16px">
-      <div class="m-label">Total qu'on vous doit</div>
-      <div class="m-value mono">${fmt(totalDu)} ${DB.parametres.devise}</div>
-    </div>
-
-    <button class="btn btn-ambre" onclick="openCreanceSheet()" style="margin-bottom:16px">➕ Nouveau crédit client</button>
-
-    ${clients.length===0 ? `
-      <div class="empty"><div class="e-ic">👥</div><div>Aucun client à crédit</div>
-      <div style="font-size:13px;margin-top:6px">Ajoutez un crédit quand un client prend sans payer</div></div>
-    ` : `
-    <div class="card">
-      <div class="hint" style="margin-bottom:10px">Touchez un client pour voir le détail et encaisser.</div>
-      ${clients.map(c=>`
-        <div class="cat-row" style="cursor:pointer" onclick="openClientSheet('${c.id}')">
-          <span class="cat-dot" style="background:${c.solde>0?'var(--ambre)':'var(--vert)'}"></span>
-          <div class="cat-info"><div class="cat-name">${c.nom}</div>
-          <div class="cat-meta">reçu ${fmt(c.totalPaye)}/${fmt(c.totalCredit)}</div></div>
-          <div style="text-align:right">
-            ${c.solde>0 ? `<div class="pill low">doit ${fmt(c.solde)}</div>` : `<div class="pill ok">à jour ✓</div>`}
-          </div>
-        </div>`).join('')}
-    </div>`}
-  </div>`;
-}
-
-// ---------- PAGE GRAPHIQUES ----------
 function pageGraphiques(){
   // Ventes par jour (12 derniers inventaires)
   const invs = [...DB.inventaires].sort((a,b)=>a.date<b.date?-1:1).slice(-12);
@@ -3164,12 +2838,7 @@ function pageGraphiques(){
     <div class="page-title">📊 Graphiques</div>
     <div class="page-sub">Vos ventes et votre stock en images.</div>
 
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('clients')">👥 Clients</button>
-      <button class="chip on" onclick="go('graphiques')">📊 Graphiques</button>
-      <button class="chip" onclick="go('benefice')">📈 Bénéfice</button>
-    </div>
+    ${barrePole('vente','graphiques')}
 
     <div class="card">
       <div class="card-head"><div class="card-title">📈 Ventes par inventaire</div></div>
@@ -3221,55 +2890,6 @@ function graphBarresH(data){
 }
 
 // ---------- PAGE EMPRUNTS / PRÊTS ----------
-function pageEmprunts(){
-  const emprunts = (DB.emprunts||[]).map(e=>infosEmprunt(e.id)).sort((a,b)=> b.solde - a.solde);
-  const totalDu = totalDettesEmprunts();
-  return `
-  <div class="page">
-    <div class="page-title">🏦 Emprunts / Prêts</div>
-    <div class="page-sub">L'argent que vous avez emprunté (frigo, machine…).</div>
-
-    <div class="swipe-x" style="margin-bottom:16px">
-      <button class="chip" onclick="go('caisse')">💰 Caisse</button>
-      <button class="chip" onclick="go('fournisseurs')">🏢 Fournisseurs</button>
-      <button class="chip" onclick="go('clients')">👥 Clients</button>
-      <button class="chip on" onclick="go('emprunts')">🏦 Emprunts</button>
-    </div>
-
-    <div class="metric accent" style="margin-bottom:16px">
-      <div class="m-label">Total qu'il reste à rembourser</div>
-      <div class="m-value mono">${fmt(totalDu)} ${DB.parametres.devise}</div>
-    </div>
-
-    <button class="btn btn-ambre" onclick="openEmpruntSheet()" style="margin-bottom:16px">➕ Nouvel emprunt</button>
-
-    ${emprunts.length===0 ? `
-      <div class="empty"><div class="e-ic">🏦</div><div>Aucun emprunt</div>
-      <div style="font-size:13px;margin-top:6px">Ajoutez le prêt qui a servi à payer le frigo, la machine…</div></div>
-    ` : `
-    <div class="card">
-      <div class="hint" style="margin-bottom:10px">Touchez un emprunt pour rembourser ou voir le détail.</div>
-      ${emprunts.map(e=>{
-        const pct = e.montantARembourser>0 ? Math.round((e.totalRembourse/e.montantARembourser)*100) : 0;
-        return `<div class="cat-row" style="cursor:pointer;display:block" onclick="openEmpruntDetailSheet('${e.id}')">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span class="cat-dot" style="background:${e.solde>0?'var(--ambre)':'var(--vert)'}"></span>
-            <div class="cat-info"><div class="cat-name">${e.preteur}</div>
-            <div class="cat-meta">${e.motif||'—'} • remboursé ${fmt(e.totalRembourse)}/${fmt(e.montantARembourser)}</div></div>
-            <div style="text-align:right">
-              ${e.solde>0 ? `<div class="pill low">reste ${fmt(e.solde)}</div>` : `<div class="pill ok">soldé ✓</div>`}
-            </div>
-          </div>
-          <div style="height:6px;background:var(--nuit);border-radius:4px;margin-top:8px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:var(--vert)"></div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`}
-  </div>`;
-}
-
-// ---------- PAGE CAFÉ ----------
 function pageCafe(){
   const p = window._cafePeriode || 'mois';
   const ref = auj();
@@ -3447,6 +3067,7 @@ function pageArchives(){
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">💰 Caisse fin</span><span style="font-weight:600">${fmt(s.soldeCaisseFin)} ${dev}</span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--texte-doux)">📦 Valeur stock</span><span style="font-weight:600">${fmt(s.valeurStock)} ${dev}</span></div>
         <button class="btn btn-ghost btn-sm" onclick="voirRapportArchive('${s.id}')" style="margin-top:8px">📋 Voir / copier le rapport</button>
+        ${s.detail ? `<button class="btn btn-ghost btn-sm" onclick="voirDetailSemaine('${s.id}')" style="margin-top:8px">🔍 Voir le détail (achats, ventes, café)</button>` : `<div class="hint" style="margin-top:8px">Détail non gardé (semaine antérieure à cette fonction)</div>`}
       </div>
     `).join('')}
   </div>`;
@@ -3465,6 +3086,64 @@ function voirRapportArchive(id){
     </div>
     <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
   `);
+}
+
+let _semaineDetailId = null;
+function voirDetailSemaine(id){ _semaineDetailId = id; go('semaineDetail'); }
+
+/* Fiche complète d'une semaine déjà clôturée : chaque achat, chaque inventaire,
+   chaque mouvement café — gardés tels quels depuis la clôture, jamais recalculés. */
+function pageSemaineDetail(){
+  const s = (DB.archivesSemaines||[]).find(x=>x.id===_semaineDetailId);
+  const dev = DB.parametres.devise;
+  if(!s || !s.detail){
+    return `<div class="page"><div class="page-title">🔍 Détail de la semaine</div>
+      <div class="empty"><div class="e-ic">🔍</div><div>Semaine introuvable</div></div>
+      <button class="btn btn-ghost" onclick="go('archives')" style="margin-top:14px">← Retour à l'historique</button>
+    </div>`;
+  }
+  const d = s.detail;
+  const bloc = (titre, lignes, rendu, vide)=> `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="font-size:14px;margin-bottom:8px">${titre}</div>
+      ${lignes.length===0 ? `<div class="hint">${vide}</div>` : lignes.map(rendu).join('')}
+    </div>`;
+  return `
+  <div class="page">
+    <div class="page-title">🔍 Semaine du ${dateFr(s.dateDebut)}</div>
+    <div class="page-sub">Au ${dateFr(s.dateFin)} — détail complet, gardé tel quel depuis la clôture.</div>
+    <button class="btn btn-ghost btn-sm" onclick="go('archives')" style="margin-bottom:14px">← Retour à l'historique</button>
+
+    ${bloc('📥 Achats ('+d.achats.length+')', [...d.achats].sort((a,b)=>a.date<b.date?1:-1), a=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${a.produit||'?'}</div>
+      <div class="cat-meta">${dateFr(a.date)} • ${a.fournisseur||'Divers'}${a.quantite?' • '+fmt(a.quantite)+' u.':''}</div></div>
+      <span style="font-weight:700">${fmt(a.prixGlobal)} ${dev}</span></div>`, "Aucun achat cette semaine")}
+
+    ${bloc('📋 Inventaires ('+d.inventaires.length+')', [...d.inventaires].sort((a,b)=>a.date<b.date?1:-1), inv=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${dateFr(inv.date)}${inv.heure?' • '+inv.heure:''}</div>
+      <div class="cat-meta">${(inv.lignes||[]).filter(l=>l.vendu>0).map(l=>l.nom+': '+fmt(l.vendu)).join(', ')||'—'}</div></div>
+      <span style="font-weight:700;color:var(--vert)">${fmt(inv.totalCA)} ${dev}</span></div>`, "Aucun inventaire cette semaine")}
+
+    ${bloc('📅 Ventes notées à la main ('+d.ventesJour.length+')', [...d.ventesJour].sort((a,b)=>a.date<b.date?1:-1), v=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${dateFr(v.date)}</div>
+      <div class="cat-meta">${v.note||'—'}</div></div><span style="font-weight:700">${fmt(v.montant)} ${dev}</span></div>`, "Aucune saisie cette semaine")}
+
+    ${bloc('☕ Café — ventes ('+d.cafeVentesDetail.length+')', [...d.cafeVentesDetail].sort((a,b)=>a.date<b.date?1:-1), v=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${dateFr(v.date)}</div>
+      <div class="cat-meta">${v.note||'—'}</div></div><span style="font-weight:700;color:var(--vert)">${fmt(v.montant)} ${dev}</span></div>`, "Aucune vente café cette semaine")}
+
+    ${bloc('☕ Café — achats ('+d.cafeAchatsDetail.length+')', [...d.cafeAchatsDetail].sort((a,b)=>a.date<b.date?1:-1), a=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${a.article||'?'}</div>
+      <div class="cat-meta">${dateFr(a.date)}</div></div><span style="font-weight:700;color:var(--rouge)">${fmt(a.montant)} ${dev}</span></div>`, "Aucun achat café cette semaine")}
+
+    ${d.depenses.length ? bloc('💸 Dépenses ('+d.depenses.length+')', [...d.depenses].sort((a,b)=>a.date<b.date?1:-1), dep=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${dep.motif}</div>
+      <div class="cat-meta">${dateFr(dep.date)}</div></div><span style="font-weight:700;color:var(--rouge)">${fmt(dep.montant)} ${dev}</span></div>`, '') : ''}
+
+    ${d.rations.length ? bloc('🍚 Ration du vendeur ('+d.rations.length+')', [...d.rations].sort((a,b)=>a.date<b.date?1:-1), r=>`
+      <div class="cat-row"><div class="cat-info"><div class="cat-name" style="font-size:14px">${r.type==='semaine'?'Fin de semaine':'Ration du jour'}</div>
+      <div class="cat-meta">${dateFr(r.date)}</div></div><span style="font-weight:700;color:var(--rouge)">${fmt(r.montant)} ${dev}</span></div>`, '') : ''}
+  </div>`;
 }
 
 /* ===== actions.js ===== */
@@ -4122,320 +3801,7 @@ function refaireDernierAchat(){
 // ============================================================
 //  FACTURE MULTI-PRODUITS
 // ============================================================
-let _factureLignes = [];
 
-function openFactureSheet(){
-  _factureLignes = [ ligneVide(), ligneVide() ]; // commence avec 2 lignes
-  window._facturePayMode = 'tout';
-  rendreFactureSheet();
-}
-
-function ligneVide(){
-  return { produit:'', categorieId: (DB.categories[0] && DB.categories[0].id) || '', cartons:'', contenu:24, prix:'' };
-}
-
-function factureTotal(){
-  return _factureLignes.reduce((s,l)=> s + (Number(l.prix)||0), 0);
-}
-
-function rendreFactureSheet(){
-  const cats = DB.categories;
-  const prods = DB.produits;
-  const total = factureTotal();
-  const lignesHtml = _factureLignes.map((l,i)=>`
-    <div class="card" style="padding:12px;margin-bottom:10px;background:var(--nuit)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-weight:700;font-size:13px">Produit ${i+1}</span>
-        ${_factureLignes.length>1?`<button class="btn btn-sm btn-ghost" onclick="factureSupprLigne(${i})" style="padding:3px 9px">✕</button>`:''}
-      </div>
-      <div class="field" style="margin-bottom:8px">
-        <input class="input" list="fprodList" placeholder="Produit (ex: COCA)" value="${l.produit}"
-          oninput="factureMaj(${i},'produit',this.value)" autocomplete="off">
-      </div>
-      <div class="field" style="margin-bottom:8px">
-        <select class="input" onchange="factureMaj(${i},'categorieId',this.value)">
-          ${cats.map(c=>`<option value="${c.id}" ${l.categorieId===c.id?'selected':''}>${c.nom} — ${c.prix}${DB.parametres.devise}</option>`).join('')}
-        </select>
-      </div>
-      <div class="row2" style="margin-bottom:0">
-        <div class="field" style="margin-bottom:8px"><input class="input" type="number" inputmode="numeric" placeholder="Cartons" value="${l.cartons}" oninput="factureMaj(${i},'cartons',this.value)"></div>
-        <div class="field" style="margin-bottom:8px">
-          <input class="input" type="number" inputmode="numeric" min="1" placeholder="Contenu / carton" value="${l.contenu}" oninput="factureMaj(${i},'contenu',this.value)">
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:0">
-        <input class="input" type="number" inputmode="numeric" placeholder="Prix de cette ligne" value="${l.prix}" oninput="factureMaj(${i},'prix',this.value)">
-      </div>
-    </div>
-  `).join('');
-
-  sheet(`
-    <h2>🧾 Facture (plusieurs produits)</h2>
-    <div class="s-sub">Même date et même fournisseur pour tous les produits.</div>
-    <datalist id="fprodList">${prods.map(p=>`<option value="${p.nom}">`).join('')}</datalist>
-
-    <div class="field">
-      <label>Fournisseur (optionnel)</label>
-      <input class="input" id="fFourn" list="fournList2" placeholder="Ex: DIARRA" autocomplete="off">
-      <datalist id="fournList2">${DB.fournisseurs.map(f=>`<option value="${f.nom}">`).join('')}</datalist>
-    </div>
-    <div class="field">
-      <label>Date</label>
-      <input class="input" id="fDate" type="date" value="${auj()}">
-    </div>
-
-    <label style="display:block;font-size:12px;font-weight:600;color:var(--texte-doux);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px">Produits</label>
-    ${lignesHtml}
-    <button class="btn btn-ghost" onclick="factureAjouterLigne()" style="margin-bottom:14px">➕ Ajouter un produit</button>
-
-    <div class="card" style="padding:12px;background:var(--nuit)">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="color:var(--texte-doux)">Total facture</span>
-        <span class="big-total" style="font-size:22px">${fmt(total)} ${DB.parametres.devise}</span>
-      </div>
-    </div>
-
-    <div class="field" style="margin-top:14px">
-      <label>Paiement</label>
-      <div class="seg" style="margin-bottom:0">
-        <button type="button" class="${window._facturePayMode==='tout'?'on':''}" onclick="factureSetPay('tout')">Payé tout</button>
-        <button type="button" class="${window._facturePayMode==='rien'?'on':''}" onclick="factureSetPay('rien')">Crédit (0)</button>
-        <button type="button" class="${window._facturePayMode==='partiel'?'on':''}" onclick="factureSetPay('partiel')">Partiel</button>
-      </div>
-      <input class="input" id="fPartiel" type="number" inputmode="numeric" placeholder="Montant payé"
-        style="display:${window._facturePayMode==='partiel'?'block':'none'};margin-top:10px">
-    </div>
-
-    <div class="btn-group">
-      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
-      <button class="btn btn-ambre" onclick="factureEnregistrer()">Enregistrer la facture</button>
-    </div>
-  `);
-  // restaurer les valeurs fournisseur/date/partiel si on re-rend (après ajout de ligne)
-  if(window._factureFourn!==undefined){ const el=$('#fFourn'); if(el) el.value=window._factureFourn; }
-  if(window._factureDate){ const el=$('#fDate'); if(el) el.value=window._factureDate; }
-}
-
-// Sauvegarder les champs communs avant de re-rendre (ajout/suppression de ligne)
-function factureSauverCommuns(){
-  const f=$('#fFourn'), d=$('#fDate'), p=$('#fPartiel');
-  if(f) window._factureFourn = f.value;
-  if(d) window._factureDate = d.value;
-  if(p && window._facturePayMode==='partiel') window._facturePartiel = p.value;
-}
-
-function factureMaj(i, champ, val){
-  if(_factureLignes[i]){ _factureLignes[i][champ] = val; }
-  // mettre à jour le total affiché sans tout re-rendre (évite de perdre le focus)
-  if(champ==='prix'){
-    const t = document.querySelector('.big-total');
-    if(t) t.textContent = fmt(factureTotal()) + ' ' + DB.parametres.devise;
-  }
-}
-function factureAjouterLigne(){ factureSauverCommuns(); _factureLignes.push(ligneVide()); rendreFactureSheet(); }
-function factureSupprLigne(i){ factureSauverCommuns(); _factureLignes.splice(i,1); if(_factureLignes.length===0)_factureLignes.push(ligneVide()); rendreFactureSheet(); }
-function factureSetPay(mode){
-  factureSauverCommuns();
-  window._facturePayMode = mode;
-  const inp = $('#fPartiel');
-  if(inp) inp.style.display = mode==='partiel' ? 'block' : 'none';
-  document.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
-  // re-render léger des boutons
-  rendreFactureSheet();
-}
-
-function factureEnregistrer(){
-  const fournisseur = ($('#fFourn') && $('#fFourn').value.trim()) || '';
-  const date = ($('#fDate') && $('#fDate').value) || auj();
-  const mode = window._facturePayMode || 'tout';
-  const partiel = ($('#fPartiel') && Number($('#fPartiel').value)) || 0;
-  // valider : au moins une ligne avec produit + prix
-  const valides = _factureLignes.filter(l=> (l.produit||'').trim() && (Number(l.prix)||0)>0);
-  if(valides.length===0){ toast('Ajoutez au moins un produit avec son prix','err'); return; }
-
-  const r = ajouterFacture({
-    date, fournisseur,
-    lignes: valides.map(l=>({
-      produitNom: l.produit, categorieId: l.categorieId,
-      cartons: l.cartons, contenu: l.contenu, prixGlobal: l.prix
-    })),
-    paiementMode: mode, montantPartiel: partiel
-  });
-  // nettoyer
-  window._factureFourn = undefined; window._factureDate = undefined; window._facturePartiel = undefined;
-  toast(r.crees.length + ' produits enregistrés ✓');
-  closeSheet();
-  go('achats');
-}
-
-// ============================================================
-//  IMPORT CSV / EXCEL
-// ============================================================
-function openImportSheet(){
-  sheet(`
-    <h2>📥 Importer des achats</h2>
-    <div class="s-sub">Importez directement un fichier Excel (.xlsx) ou CSV.</div>
-
-    <div class="card" style="background:var(--nuit);padding:14px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Comment faire ?</div>
-      <div style="font-size:12.5px;color:var(--texte-doux);line-height:1.6">
-        1. Téléchargez le modèle ci-dessous<br>
-        2. Remplissez-le avec vos achats (Excel ou tableur)<br>
-        3. Importez-le ici — <b>le fichier Excel marche directement</b>
-      </div>
-      <button class="btn btn-ghost" onclick="telechargerModeleCSV()" style="margin-top:12px">📄 Télécharger le modèle CSV</button>
-    </div>
-
-    <div class="field" style="margin-top:14px">
-      <label>Choisir votre fichier (Excel .xlsx ou CSV)</label>
-      <input type="file" id="csvFile" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="input" style="padding:10px">
-    </div>
-
-    <div id="importApercu"></div>
-
-    <div class="btn-group">
-      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
-    </div>
-  `);
-
-  $('#csvFile').addEventListener('change', e=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const nom = (file.name||'').toLowerCase();
-    const zone = $('#importApercu');
-    if(nom.endsWith('.xlsx')){
-      // Fichier Excel : décoder puis analyser
-      if(zone) zone.innerHTML = '<div class="hint" style="margin-top:14px">Lecture du fichier Excel…</div>';
-      const reader = new FileReader();
-      reader.onload = async ev=>{
-        try{
-          const texte = await xlsxVersTexte(ev.target.result);
-          window._importTexte = texte;
-          const res = analyserCSVAchats(texte);
-          window._importLignes = res.lignes;
-          afficherApercuImport(res);
-        }catch(err){
-          if(zone) zone.innerHTML = `<div class="warn" style="margin-top:14px;background:#3a1414;border-color:var(--rouge)">
-            <b style="color:var(--rouge)">Impossible de lire ce fichier Excel.</b><br>
-            <span style="font-size:12px">Essayez de l'enregistrer en CSV, ou vérifiez qu'il vient bien du modèle fourni.</span></div>`;
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      // Fichier CSV / texte
-      const reader = new FileReader();
-      reader.onload = ev=>{
-        window._importTexte = ev.target.result;
-        const res = analyserCSVAchats(ev.target.result);
-        window._importLignes = res.lignes;
-        afficherApercuImport(res);
-      };
-      reader.readAsText(file);
-    }
-  });
-}
-
-function afficherApercuImport(res){
-  const zone = $('#importApercu');
-  if(!zone) return;
-  if(res.lignes.length===0){
-    zone.innerHTML = `<div class="warn" style="margin-top:14px;background:#3a1414;border-color:var(--rouge)">
-      <b style="color:var(--rouge)">Aucune ligne valide.</b><br>
-      <span style="font-size:12px">${res.erreurs.slice(0,4).join('<br>')||'Vérifiez le format du fichier.'}</span></div>`;
-    return;
-  }
-  const inconnues = res.categoriesInconnues || [];
-  const apercu = res.lignes.slice(0,10);
-
-  // Section catégories inconnues (à créer avec leur prix de vente)
-  const blocInconnues = inconnues.length ? `
-    <div class="card" style="margin-top:14px;border-color:var(--orange);background:#2a1e0e">
-      <div class="card-title" style="font-size:14px;margin-bottom:6px;color:var(--orange)">⚠️ Catégories inconnues</div>
-      <div class="hint" style="margin-bottom:12px">Ces catégories n'existent pas encore. Indiquez leur <b>prix de vente</b> pour les créer.</div>
-      ${inconnues.map(nom=>`
-        <div class="cat-row" style="background:var(--nuit)">
-          <div class="cat-info"><div class="cat-name">${nom}</div>
-          <div class="cat-meta">prix de vente ?</div></div>
-          <input class="cat-input" type="number" inputmode="numeric" min="0" placeholder="prix" data-newcat="${nom}">
-        </div>`).join('')}
-      <button class="btn btn-ambre" onclick="creerCategoriesImport()" style="margin-top:10px">➕ Créer ces catégories</button>
-    </div>` : '';
-
-  // Tableau d'aperçu (catégories inconnues en orange)
-  const tableau = `
-    <div class="card" style="margin-top:14px">
-      <div class="card-title" style="font-size:14px;margin-bottom:10px">${inconnues.length?'Aperçu':'✓ '+res.lignes.length+' achat(s) prêt(s)'}</div>
-      <div class="tbl-wrap"><table class="tbl">
-        <tr><th>Date</th><th>Produit</th><th>Catégorie</th><th class="num">Prix</th></tr>
-        ${apercu.map(l=>`<tr>
-          <td style="font-size:11px;color:var(--texte-doux)">${dateFr(l.date)}</td>
-          <td>${l.produitNom}</td>
-          <td style="font-size:11px;${l.categorieInconnue?'color:var(--orange);font-weight:700':''}">${l.categorieInconnue?'⚠️ '+l.categorieNomBrut:l.categorieNom}</td>
-          <td class="num">${fmt(l.prixGlobal)}</td>
-        </tr>`).join('')}
-      </table></div>
-      ${res.lignes.length>10?`<div class="hint" style="margin-top:8px">…et ${res.lignes.length-10} autre(s)</div>`:''}
-      ${res.erreurs.length?`<div class="hint" style="color:var(--orange);margin-top:8px">⚠️ ${res.erreurs.length} ligne(s) ignorée(s)</div>`:''}
-      ${inconnues.length
-        ? `<div class="hint" style="color:var(--orange);margin-top:10px">Créez d'abord les catégories inconnues ci-dessus avant d'importer.</div>`
-        : `<button class="btn btn-ambre" onclick="confirmerImport()" style="margin-top:12px">✅ Importer ces ${res.lignes.length} achats</button>`}
-    </div>`;
-
-  zone.innerHTML = blocInconnues + tableau;
-}
-
-// Créer les catégories inconnues saisies, puis ré-analyser
-function creerCategoriesImport(){
-  const inputs = document.querySelectorAll('[data-newcat]');
-  const couleurs = ['#5EEAD4','#60A5FA','#A78BFA','#C4B5FD','#FBBF24','#FB923C','#F472B6','#34D399','#FACC15','#818CF8'];
-  let created = 0;
-  inputs.forEach(inp=>{
-    const nom = (inp.dataset.newcat||'').trim();
-    const prix = Number(inp.value)||0;
-    if(nom && prix>0 && !categorieParNom(nom)){
-      DB.categories.push({ id: uid('cat'), nom: nomSain(nom), prix, couleur: couleurs[DB.categories.length % couleurs.length] });
-      created++;
-    }
-  });
-  if(created===0){ toast('Indiquez le prix de vente','err'); return; }
-  sauverDB();
-  toast(created + ' catégorie(s) créée(s) ✓');
-  // ré-analyser le même fichier : les catégories sont maintenant reconnues
-  const res = analyserCSVAchats(window._importTexte || '');
-  window._importLignes = res.lignes;
-  afficherApercuImport(res);
-}
-
-function confirmerImport(){
-  const lignes = window._importLignes || [];
-  if(lignes.length===0){ toast('Rien à importer','err'); return; }
-  sauverDB();
-  const n = importerAchats(lignes);
-  window._importLignes = [];
-  toast(n + ' achats importés ✓');
-  closeSheet();
-  go('achats');
-}
-
-function telechargerModeleCSV(){
-  const csv = modeleCSVAchats();
-  // BOM pour qu'Excel ouvre correctement les accents
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'modele_achats_frigo.csv';
-  a.click(); URL.revokeObjectURL(url);
-  toast('Modèle téléchargé ✓');
-}
-
-/* ===== actions3.js ===== */
-/* ============================================================
-   FRIGO — Actions : Régularisation, Clients, Corbeille, Export, Recherche
-   ============================================================ */
-
-// ============================================================
-//  RÉGULARISATION DE STOCK
-// ============================================================
 function openRegulariserSheet(){
   const cats = DB.categories;
   sheet(`
@@ -4574,97 +3940,6 @@ function supprRegulUI(id){
 // ============================================================
 //  CLIENTS À CRÉDIT
 // ============================================================
-function openCreanceSheet(){
-  sheet(`
-    <h2>➕ Nouveau crédit client</h2>
-    <div class="s-sub">Un client prend de la marchandise sans payer maintenant.</div>
-    <div class="field"><label>Nom du client</label>
-      <input class="input" id="crClient" list="clientList" placeholder="Ex: MOUSSA" autocomplete="off">
-      <datalist id="clientList">${DB.clients.map(c=>`<option value="${c.nom}">`).join('')}</datalist>
-    </div>
-    <div class="field"><label>Montant du crédit (${DB.parametres.devise})</label>
-      <input class="input" id="crMontant" type="number" inputmode="numeric" placeholder="Ex: 5000"></div>
-    <div class="field"><label>Note (facultatif)</label>
-      <input class="input" id="crNote" placeholder="Ex: 10 cocas + 2 bramali"></div>
-    <div class="field"><label>Date</label>
-      <input class="input" id="crDate" type="date" value="${auj()}"></div>
-    <div class="btn-group">
-      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
-      <button class="btn btn-ambre" onclick="validerCreance()">Enregistrer le crédit</button>
-    </div>
-  `);
-}
-
-function validerCreance(){
-  const clientNom = $('#crClient').value.trim();
-  const montant = Number($('#crMontant').value)||0;
-  const note = $('#crNote').value.trim();
-  const date = $('#crDate').value || auj();
-  if(!clientNom){ toast('Indiquez le nom du client','err'); return; }
-  if(montant<=0){ toast('Indiquez le montant','err'); return; }
-  ajouterCreance({date, clientNom, montant, note});
-  toast('Crédit enregistré ✓');
-  closeSheet();
-  go('clients');
-}
-
-function openClientSheet(clientId){
-  const c = infosClient(clientId);
-  if(!c) return;
-  const mouvements = [
-    ...c.creances.map(x=>({...x, sens:'credit'})),
-    ...c.paiements.map(x=>({...x, sens:'paiement'}))
-  ].sort((a,b)=> a.date<b.date?1:-1);
-  sheet(`
-    <h2>👤 ${c.nom}</h2>
-    <div class="s-sub">${c.solde>0 ? 'Vous doit '+fmt(c.solde)+' '+DB.parametres.devise : 'Compte à jour ✓'}</div>
-
-    <div class="metrics" style="margin-bottom:14px">
-      <div class="metric"><div class="m-label">Total crédit</div><div class="m-value mono">${fmt(c.totalCredit)}</div></div>
-      <div class="metric accent"><div class="m-label">Reste dû</div><div class="m-value mono">${fmt(c.solde)}</div></div>
-    </div>
-
-    ${c.solde>0 ? `
-    <div class="field"><label>Encaisser un paiement (${DB.parametres.devise})</label>
-      <input class="input" id="clPay" type="number" inputmode="numeric" placeholder="Montant reçu"></div>
-    <div class="btn-group" style="margin-bottom:8px">
-      <button class="btn btn-ghost btn-sm" onclick="payerClientTout('${clientId}')" style="flex:0 0 auto">Tout (${fmt(c.solde)})</button>
-      <button class="btn btn-ambre" onclick="validerPaiementClient('${clientId}')">Encaisser</button>
-    </div>` : ''}
-
-    <div class="card" style="margin-top:8px">
-      <div class="card-title" style="font-size:13px;margin-bottom:8px">Historique</div>
-      ${mouvements.length===0 ? '<div class="hint">Rien pour le moment</div>' :
-        mouvements.map(m=>`<div class="cat-row">
-          <div class="cat-info"><div class="cat-name" style="font-size:14px">${m.sens==='credit'?'📦 Crédit':'💵 Paiement'}</div>
-          <div class="cat-meta">${dateFr(m.date)}${m.note?' • '+m.note:''}</div></div>
-          <span style="font-weight:700;color:${m.sens==='credit'?'var(--ambre)':'var(--vert)'}">${m.sens==='credit'?'+':'−'}${fmt(m.montant)}</span>
-        </div>`).join('')}
-    </div>
-    <div class="btn-group"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
-  `);
-}
-
-function validerPaiementClient(clientId){
-  const montant = Number($('#clPay').value)||0;
-  if(montant<=0){ toast('Indiquez le montant','err'); return; }
-  payerClient({clientId, montant});
-  toast('Paiement enregistré ✓');
-  closeSheet();
-  go('clients');
-}
-function payerClientTout(clientId){
-  const solde = soldeClient(clientId);
-  if(solde<=0){ toast('Rien à payer','err'); return; }
-  payerClient({clientId, montant:solde});
-  toast('Compte soldé ✓');
-  closeSheet();
-  go('clients');
-}
-
-// ============================================================
-//  RECHERCHE
-// ============================================================
 function openRechercheSheet(){
   sheet(`
     <h2>🔍 Rechercher</h2>
@@ -4696,7 +3971,7 @@ function lancerRecherche(terme){
   }
   if(r.clients.length){
     html += `<div class="card" style="margin-bottom:10px"><div class="card-title" style="font-size:13px;margin-bottom:6px">👥 Clients (${r.clients.length})</div>
-      ${r.clients.map(c=>`<div class="cat-row" style="cursor:pointer" onclick="closeSheet();openClientSheet('${c.id}')"><div class="cat-info"><div class="cat-name" style="font-size:14px">${c.nom}</div><div class="cat-meta">doit ${fmt(soldeClient(c.id))}</div></div></div>`).join('')}</div>`;
+      ${r.clients.map(c=>`<div class="cat-row" style="cursor:pointer" ><div class="cat-info"><div class="cat-name" style="font-size:14px">${c.nom}</div><div class="cat-meta">doit ${fmt(soldeClient(c.id))}</div></div></div>`).join('')}</div>`;
   }
   if(r.achats.length){
     html += `<div class="card"><div class="card-title" style="font-size:13px;margin-bottom:6px">📥 Achats (${r.achats.length})</div>
@@ -4761,116 +4036,6 @@ async function exporterExcelComplet(){
 
 // ============================================================
 //  EMPRUNTS / PRÊTS
-// ============================================================
-function openEmpruntSheet(){
-  sheet(`
-    <h2>➕ Nouvel emprunt</h2>
-    <div class="s-sub">L'argent que vous avez emprunté pour payer un équipement.</div>
-    <div class="field"><label>Qui vous a prêté ?</label>
-      <input class="input" id="empPreteur" placeholder="Ex: Mutuelle, Amadou, banque"></div>
-    <div class="field"><label>Pour quoi ?</label>
-      <input class="input" id="empMotif" placeholder="Ex: Frigo + machine à café"></div>
-    <div class="field"><label>Montant emprunté (${DB.parametres.devise})</label>
-      <input class="input" id="empMontant" type="number" inputmode="numeric" placeholder="Ex: 300000"></div>
-    <div class="field"><label>Total à rembourser avec intérêts (facultatif)</label>
-      <input class="input" id="empTotal" type="number" inputmode="numeric" placeholder="Laissez vide s'il n'y a pas d'intérêts">
-      <div class="hint" style="margin-top:5px">Si vous devez rendre plus que le montant emprunté (intérêts), indiquez le total ici.</div></div>
-    <div class="field"><label>Date de l'emprunt</label>
-      <input class="input" id="empDate" type="date" value="${auj()}"></div>
-    <div class="btn-group">
-      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
-      <button class="btn btn-ambre" onclick="validerEmprunt()">Enregistrer l'emprunt</button>
-    </div>
-  `);
-}
-
-function validerEmprunt(){
-  const preteur = $('#empPreteur').value.trim();
-  const motif = $('#empMotif').value.trim();
-  const montant = Number($('#empMontant').value)||0;
-  const total = Number($('#empTotal').value)||0;
-  const date = $('#empDate').value || auj();
-  if(!preteur){ toast('Indiquez qui vous a prêté','err'); return; }
-  if(montant<=0){ toast('Indiquez le montant','err'); return; }
-  ajouterEmprunt({date, preteur, motif, montant, montantARembourser: total});
-  toast('Emprunt enregistré ✓');
-  closeSheet();
-  go('emprunts');
-}
-
-function openEmpruntDetailSheet(empruntId){
-  const e = infosEmprunt(empruntId);
-  if(!e) return;
-  const pct = e.montantARembourser>0 ? Math.round((e.totalRembourse/e.montantARembourser)*100) : 0;
-  sheet(`
-    <h2>🏦 ${e.preteur}</h2>
-    <div class="s-sub">${e.motif||'Emprunt'} ${e.montantARembourser>e.montant?'• avec intérêts':''}</div>
-
-    <div class="metrics" style="margin-bottom:8px">
-      <div class="metric"><div class="m-label">À rembourser</div><div class="m-value mono">${fmt(e.montantARembourser)}</div></div>
-      <div class="metric accent"><div class="m-label">Reste</div><div class="m-value mono">${fmt(e.solde)}</div></div>
-    </div>
-    <div style="height:8px;background:var(--nuit);border-radius:4px;margin-bottom:14px;overflow:hidden">
-      <div style="height:100%;width:${pct}%;background:var(--vert)"></div>
-    </div>
-    <div class="hint" style="margin-bottom:14px;text-align:center">Remboursé ${fmt(e.totalRembourse)} sur ${fmt(e.montantARembourser)} (${pct}%)</div>
-
-    ${e.solde>0 ? `
-    <div class="field"><label>Enregistrer un remboursement (${DB.parametres.devise})</label>
-      <input class="input" id="rembMontant" type="number" inputmode="numeric" placeholder="Montant remboursé"></div>
-    <div class="field"><label>Date</label>
-      <input class="input" id="rembDate" type="date" value="${auj()}"></div>
-    <div class="btn-group" style="margin-bottom:8px">
-      <button class="btn btn-ghost btn-sm" onclick="rembourserToutEmprunt('${empruntId}')" style="flex:0 0 auto">Solder (${fmt(e.solde)})</button>
-      <button class="btn btn-ambre" onclick="validerRemboursement('${empruntId}')">Rembourser</button>
-    </div>
-    <div class="hint" style="margin-bottom:8px">Le remboursement sort de votre caisse (pas compté comme un coût de boisson).</div>
-    ` : `<div class="tip-ok" style="background:rgba(52,211,153,.12);border:1px solid var(--vert);border-radius:10px;padding:12px;text-align:center;color:var(--vert);font-weight:700;margin-bottom:12px">✓ Emprunt entièrement remboursé</div>`}
-
-    <div class="card">
-      <div class="card-title" style="font-size:13px;margin-bottom:8px">Historique des remboursements</div>
-      ${e.remboursements.length===0 ? '<div class="hint">Aucun remboursement pour le moment</div>' :
-        e.remboursements.map(r=>`<div class="cat-row">
-          <div class="cat-info"><div class="cat-name" style="font-size:14px">💵 ${fmt(r.montant)} ${DB.parametres.devise}</div>
-          <div class="cat-meta">${dateFr(r.date)}${r.note?' • '+r.note:''}</div></div>
-        </div>`).join('')}
-    </div>
-
-    <div class="btn-group">
-      <button class="btn btn-danger btn-sm" onclick="supprEmpruntUI('${empruntId}')" style="flex:0 0 auto">🗑️</button>
-      <button class="btn btn-ghost" onclick="closeSheet()">Fermer</button>
-    </div>
-  `);
-}
-
-function validerRemboursement(empruntId){
-  const montant = Number($('#rembMontant').value)||0;
-  const date = $('#rembDate').value || auj();
-  if(montant<=0){ toast('Indiquez le montant','err'); return; }
-  rembourserEmprunt({date, empruntId, montant});
-  toast('Remboursement enregistré ✓');
-  closeSheet();
-  go('emprunts');
-}
-function rembourserToutEmprunt(empruntId){
-  const solde = soldeEmprunt(empruntId);
-  if(solde<=0){ toast('Déjà soldé','err'); return; }
-  rembourserEmprunt({empruntId, montant:solde});
-  toast('Emprunt soldé ✓');
-  closeSheet();
-  go('emprunts');
-}
-function supprEmpruntUI(empruntId){
-  if(confirm('Supprimer cet emprunt et ses remboursements ? (mis en corbeille)')){
-    supprimerEmprunt(empruntId);
-    toast('Emprunt supprimé');
-    closeSheet();
-    go('emprunts');
-  }
-}
-
-// ============================================================
-//  CAFÉ — fenêtres d'ajout
 // ============================================================
 function openVenteCafeSheet(){
   sheet(`
@@ -5367,6 +4532,8 @@ function pageVentesJour(){
     <div class="page-title">📅 Ventes journalières</div>
     <div class="page-sub">Notez chaque jour ce que vous avez vendu. La comparaison se fait à chaque inventaire, quel que soit son rythme.</div>
 
+    ${barrePole('vente','ventesjour')}
+
     <div class="metrics" style="margin-bottom:10px">
       <div class="metric accent"><div class="m-label">Aujourd'hui (saisi)</div><div class="m-value mono">${fmt(saisiAujd)} ${dev}</div></div>
       <div class="metric"><div class="m-label">Cette semaine (saisi)</div><div class="m-value mono">${fmt(saisiSemaine)} ${dev}</div></div>
@@ -5480,6 +4647,38 @@ function dateDernierInventaire(){
   for(const inv of DB.inventaires){ if(!d || inv.date > d) d = inv.date; }
   return d;
 }
+/* Depuis combien de jours n'avez-vous pas compté ?
+   Entre deux inventaires, les achats et rations sortent tout de suite,
+   mais les ventes n'entrent qu'au comptage : la caisse paraît chuter.
+   Cette alerte l'explique, même si vous ne notez pas vos ventes du jour. */
+function blocVentesNonComptees(){
+  const dep = dateDernierInventaire();
+  const dev = DB.parametres.devise;
+  const apres = (dt)=> !dep || dt > dep;
+  // argent sorti depuis le dernier comptage (achats payés, rations, dépenses)
+  let sorti = 0;
+  for(const p of (DB.paiements||[])){ if(apres(p.date)) sorti += Number(p.montant)||0; }
+  for(const r of (DB.rationsVendeur||[])){ if(apres(r.date)) sorti += Number(r.montant)||0; }
+  for(const d of (DB.depenses||[])){ if(apres(d.date)) sorti += Number(d.montant)||0; }
+  if(sorti <= 0) return '';
+  let jours = 0;
+  if(dep){
+    const ms = new Date(auj()).getTime() - new Date(dep).getTime();
+    jours = Math.max(0, Math.round(ms/86400000));
+  }
+  const att = argentEnAttente();
+  return `<div class="card" style="border-color:var(--ambre);background:rgba(251,191,36,.08);margin-bottom:14px">
+    <div class="card-title" style="font-size:14px;margin-bottom:6px;color:var(--ambre)">⏳ Vos ventes ne sont pas encore comptées</div>
+    <div class="hint" style="line-height:1.6">
+      ${dep ? `Dernier inventaire : <b>${dateFr(dep)}</b>${jours>0?` (il y a ${jours} jour${jours>1?'s':''})`:''}.` : `Vous n'avez pas encore fait d'inventaire.`}<br>
+      Depuis, <b>${fmt(sorti)} ${dev}</b> sont sortis de la caisse (achats, ration, dépenses) mais l'argent de vos ventes <b>n'y est pas encore entré</b>.
+      ${att.ventes>0 ? `<br>Ventes notées à la main depuis : <b>${fmt(att.ventes)} ${dev}</b>.` : ''}
+    </div>
+    <div class="hint" style="margin-top:8px">C'est normal : votre argent est dans le frigo, sous forme de marchandise vendue. Faites l'inventaire pour qu'il entre en caisse.</div>
+    <button class="btn btn-ambre" onclick="go('inventaire')" style="margin-top:10px">📋 Faire l'inventaire maintenant</button>
+  </div>`;
+}
+
 function argentEnAttente(){
   const dep = dateDernierInventaire();
   const apres = (dt)=> !dep || dt > dep;
@@ -5735,6 +4934,8 @@ function pageAchatsJour(){
   <div class="page">
     <div class="page-title">📆 Achats par date</div>
     <div class="page-sub">Ce que vous avez acheté, jour par jour, avec ce qui reste à payer.</div>
+
+    ${barrePole('achat','achatsjour')}
 
     <div class="seg" style="margin-bottom:16px">
       <button type="button" class="${p==='jour'?'on':''}" onclick="setAchatsPeriode('jour')">Jour</button>
@@ -6051,6 +5252,8 @@ function pageTransferts(){
     <div class="page-title">🔄 Transferts caisse ↔ café</div>
     <div class="page-sub">Déplacez de l'argent entre les deux, avec l'historique gardé.</div>
 
+    ${barrePole('caisse','transferts')}
+
     <div class="metrics" style="margin-bottom:16px">
       <div class="metric accent"><div class="m-label">💰 Caisse boissons</div><div class="m-value mono">${fmt(cB)} ${dev}</div></div>
       <div class="metric"><div class="m-label">☕ Solde café</div><div class="m-value mono">${fmt(cC)} ${dev}</div></div>
@@ -6160,6 +5363,8 @@ function pageRations(){
     <div class="page-title">🍚 Ration du vendeur</div>
     <div class="page-sub">Ce que vous donnez au vendeur. Déduit de la caisse et de ce qu'il doit vous verser.</div>
 
+    ${barrePole('caisse','rations')}
+
     <div class="metrics" style="margin-bottom:8px">
       <div class="metric accent"><div class="m-label">Rations de la semaine</div><div class="m-value mono">${fmt(totJour)} ${dev}</div></div>
       <div class="metric"><div class="m-label">Fin de semaine</div><div class="m-value mono">${fmt(totSem)} ${dev}</div></div>
@@ -6249,6 +5454,8 @@ function pageEpargne(){
   <div class="page">
     <div class="page-title">🐖 Mon épargne</div>
     <div class="page-sub">L'argent que vous mettez de côté. Il sort de la caisse mais reste à vous.</div>
+
+    ${barrePole('caisse','epargne')}
 
     <div class="metric accent" style="margin-bottom:14px">
       <div class="m-label">Total mis de côté</div>
