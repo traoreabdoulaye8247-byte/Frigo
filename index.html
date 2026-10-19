@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="02-08-2026 v31 (Historique détaillé ✓)">
+<meta name="frigo-version" content="19-10-2026 v32 (Import CSV des achats ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -784,6 +784,152 @@ function supprimerAchat(id){
   DB.achats = DB.achats.filter(a=>a.id!==id);
   DB.paiements = DB.paiements.filter(p=>p.achatId!==id);
   sauverDB();
+}
+
+// ============================================================
+//  IMPORT D'ACHATS DEPUIS UN FICHIER CSV/TEXTE
+//  (collé depuis un reçu papier préparé à l'avance)
+// ============================================================
+// Format d'une ligne : date;produit;categorie;cartons;contenu;prix;fournisseur;paye
+// - date : JJ/MM/AAAA ou AAAA-MM-JJ
+// - categorie : nom d'une catégorie existante (sinon créée automatiquement)
+// - paye : "oui" (payé en totalité), "non" (rien payé), ou un nombre (payé partiellement)
+function normaliserDateImport(s){
+  s = String(s||'').trim();
+  if(!s) return null;
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  return null;
+}
+function versNombreImport(s){
+  s = String(s||'').trim().replace(/\s/g,'').replace(/,/g,'.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+function categorieIdParNomImport(nom){
+  nom = nomSain(nom);
+  if(!nom) return null;
+  let c = DB.categories.find(c=>c.nom.toUpperCase()===nom.toUpperCase());
+  if(!c){
+    c = { id: uid('cat'), nom, prix: 0, couleur: '#94A3B8' };
+    DB.categories.push(c);
+  }
+  return c.id;
+}
+// Découpe une ligne CSV en tenant compte de ; ou , comme séparateur
+function decoupeLigneCSV(ligne){
+  const sep = ligne.includes(';') ? ';' : ',';
+  return ligne.split(sep).map(x=>x.trim());
+}
+// Analyse le texte collé/importé et renvoie {lignes, erreurs}
+function analyserCSVAchatsImport(texte){
+  const lignesBrutes = String(texte||'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
+  const lignes = [];
+  const erreurs = [];
+  lignesBrutes.forEach((ligne, i)=>{
+    const champs = decoupeLigneCSV(ligne);
+    const [dateStr, produit, categorie, cartonsStr, contenuStr, prixStr, fournisseur, payeStr] = champs;
+    // ignorer la ligne d'en-tête si elle contient le mot "date"
+    if(i===0 && /^date$/i.test((dateStr||'').trim())) return;
+    const date = normaliserDateImport(dateStr);
+    if(!date || !produit || !categorie){
+      erreurs.push('Ligne '+(i+1)+' ignorée (incomplète) : '+ligne);
+      return;
+    }
+    const cartons = versNombreImport(cartonsStr);
+    const contenu = versNombreImport(contenuStr) || 1;
+    const prixGlobal = versNombreImport(prixStr);
+    let montantPaye = 0;
+    const p = String(payeStr||'').trim().toLowerCase();
+    if(p==='oui' || p==='tout' || p==='total') montantPaye = prixGlobal;
+    else if(p==='' || p==='non' || p==='rien' || p==='0') montantPaye = 0;
+    else montantPaye = versNombreImport(payeStr);
+    lignes.push({
+      date, produitNom: nomSain(produit), categorieNom: nomSain(categorie),
+      cartons, contenu, prixGlobal, fournisseur: (fournisseur||'').trim(), montantPaye
+    });
+  });
+  return { lignes, erreurs };
+}
+// Ouvre la fenêtre de choix de fichier et affiche l'aperçu avant validation
+function openImportAchatsCSV(){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv,.txt';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.addEventListener('change', e=>{
+    const file = e.target.files[0];
+    document.body.removeChild(input);
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const { lignes, erreurs } = analyserCSVAchatsImport(ev.target.result);
+      if(!lignes.length){
+        toast('Aucune ligne valide dans ce fichier','err');
+        return;
+      }
+      window._importAchatsEnAttente = lignes;
+      afficherApercuImportAchats(lignes, erreurs);
+    };
+    reader.onerror = ()=> toast('Impossible de lire ce fichier','err');
+    reader.readAsText(file);
+  });
+  input.click();
+}
+function afficherApercuImportAchats(lignes, erreurs){
+  const total = lignes.reduce((s,l)=> s+l.prixGlobal, 0);
+  sheet(`
+    <h2>📤 Aperçu de l'import</h2>
+    <div class="s-sub">${lignes.length} achat(s) trouvé(s) • total ${fmt(total)} ${DB.parametres.devise}</div>
+    <div class="tbl-wrap" style="max-height:320px;overflow:auto;margin-top:10px">
+      <table class="tbl">
+        <tr><th>Date</th><th>Produit</th><th class="num">Qté</th><th class="num">Montant</th></tr>
+        ${lignes.map(l=>`<tr>
+          <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(l.date)}</td>
+          <td><div style="font-weight:600">${l.produitNom}</div>
+              <div style="font-size:11px;color:var(--texte-faible)">${l.categorieNom}${l.fournisseur?' • '+l.fournisseur:''}</div></td>
+          <td class="num">${fmt(Math.round(l.cartons*l.contenu))}</td>
+          <td class="num">${fmt(l.prixGlobal)}</td>
+        </tr>`).join('')}
+      </table>
+    </div>
+    ${erreurs.length ? `<div class="hint" style="margin-top:10px;color:var(--rouge)">⚠️ ${erreurs.length} ligne(s) ignorée(s) :<br>${erreurs.slice(0,5).join('<br>')}</div>` : ''}
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-ambre" onclick="confirmerImportAchatsCSV()">✓ Importer ${lignes.length} achat(s)</button>
+    </div>
+  `);
+}
+function confirmerImportAchatsCSV(){
+  const lignes = window._importAchatsEnAttente || [];
+  let n = 0;
+  for(const l of lignes){
+    const categorieId = categorieIdParNomImport(l.categorieNom);
+    ajouterAchat({
+      date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom,
+      categorieId, cartons: l.cartons, contenu: l.contenu,
+      prixGlobal: l.prixGlobal, montantPaye: l.montantPaye
+    });
+    n++;
+  }
+  window._importAchatsEnAttente = null;
+  closeSheet();
+  toast(n+' achat(s) importé(s) ✓');
+  renderApp();
+}
+// Télécharge un modèle vide (avec un exemple) pour que l'utilisateur sache quoi coller
+function telechargerModeleCSVAchats(){
+  const modele = 'date;produit;categorie;cartons;contenu;prix;fournisseur;paye\n'
+    + '19/10/2026;FANTA;Grand Canette;1;12;8900;Z DEPOT;oui\n';
+  const blob = new Blob([modele], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'modele_achats_frigo.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ============================================================
@@ -2187,6 +2333,10 @@ function pageAchats(){
         ${dernier ? `<button class="btn btn-ghost" onclick="refaireDernierAchat()">🔁 Refaire le dernier</button>` : ''}
         <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
         <button class="btn btn-ghost" onclick="go('achatsjour')">📆 Achats par date</button>
+      </div>
+      <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="openImportAchatsCSV()">📤 Importer un fichier (CSV)</button>
+        <button class="btn btn-ghost" onclick="telechargerModeleCSVAchats()">📄 Modèle vide</button>
       </div>
     </div>
 
