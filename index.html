@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FRIGO">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230D9488'/%3E%3Ctext x='50' y='68' font-size='54' text-anchor='middle'%3E%E2%9D%84%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<meta name="frigo-version" content="19-10-2026 v32 (Import CSV des achats ✓)">
+<meta name="frigo-version" content="20-10-2026 v37 (Plus sûr et plus lisible ✓)">
 <title>FRIGO — Gestion Boissons</title>
 <style>
 /* ============================================================
@@ -30,7 +30,7 @@
   --ambre-fonce:#D97706;
   --texte:#E8EEF6;
   --texte-doux:#94A3B8;
-  --texte-faible:#5A6B82;
+  --texte-faible:#8090A8;
   --rouge:#F87171;
   --vert:#4ADE80;
   --orange:#FB923C;
@@ -101,12 +101,12 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
   transition:transform .12s, filter .15s, background .15s;
 }
 .btn:active{transform:scale(.97)}
-.btn-primary{background:linear-gradient(145deg,var(--givre-fonce),var(--givre));color:#06231F}
+.btn-primary{background:linear-gradient(145deg,var(--givre-fonce),var(--givre));color:#03120F}
 .btn-primary:hover{filter:brightness(1.06)}
 .btn-ambre{background:linear-gradient(145deg,var(--ambre-fonce),var(--ambre));color:#3A2400}
 .btn-ghost{background:var(--ardoise-2);color:var(--texte)}
-.btn-danger{background:linear-gradient(145deg,#B91C1C,var(--rouge));color:#fff}
-.btn-sm{width:auto;padding:9px 14px;font-size:13px;border-radius:9px}
+.btn-danger{background:linear-gradient(145deg,#B91C1C,#DC2626);color:#fff}
+.btn-sm{width:auto;padding:9px 14px;font-size:13px;border-radius:9px;min-height:44px}
 
 /* ---------- LAYOUT APP ---------- */
 #app{display:none;min-height:100vh;padding-bottom:88px}
@@ -181,6 +181,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
   letter-spacing:.5px;color:var(--texte-doux);border-bottom:1px solid var(--bord);font-weight:600}
 .tbl td{padding:11px 12px;border-bottom:1px solid rgba(42,56,78,.5)}
 .tbl tr:last-child td{border-bottom:none}
+.tbl tr[onclick] td{padding-top:14px;padding-bottom:14px}
 .tbl .num{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;text-align:right;font-weight:600}
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
@@ -249,18 +250,18 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 /* segmented */
 .seg{display:flex;background:var(--nuit);border:1px solid var(--bord);
   border-radius:11px;padding:4px;gap:4px;margin-bottom:16px}
-.seg button{flex:1;padding:9px;border:none;background:none;color:var(--texte-doux);
+.seg button{flex:1;padding:9px;min-height:44px;border:none;background:none;color:var(--texte-doux);
   font-weight:600;font-size:13px;border-radius:8px;cursor:pointer;font-family:inherit}
-.seg button.on{background:var(--givre-fonce);color:#06231F}
+.seg button.on{background:var(--givre-fonce);color:#03120F}
 
 .divider{height:1px;background:var(--bord);margin:16px 0}
 .hint{font-size:12px;color:var(--texte-faible);margin-top:6px}
 .big-total{font-family:'Sora',system-ui,-apple-system,sans-serif;font-weight:800;font-size:28px;color:var(--givre);
   font-feature-settings:'tnum';letter-spacing:-1px}
 .swipe-x{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
-.chip{white-space:nowrap;padding:7px 13px;border-radius:20px;font-size:13px;font-weight:600;
+.chip{white-space:nowrap;padding:7px 13px;border-radius:22px;font-size:13px;font-weight:600;min-height:44px;display:inline-flex;align-items:center;
   background:var(--ardoise-2);border:1px solid var(--bord);color:var(--texte-doux);cursor:pointer}
-.chip.on{background:var(--givre-fonce);color:#06231F;border-color:transparent}
+.chip.on{background:var(--givre-fonce);color:#03120F;border-color:transparent}
 
 @media(min-width:600px){.metrics{grid-template-columns:repeat(4,1fr)}}
 </style>
@@ -788,25 +789,41 @@ function supprimerAchat(id){
 
 // ============================================================
 //  IMPORT D'ACHATS DEPUIS UN FICHIER CSV/TEXTE
-//  (collé depuis un reçu papier préparé à l'avance)
+//  (reçu papier lu puis préparé en fichier)
 // ============================================================
-// Format d'une ligne : date;produit;categorie;cartons;contenu;prix;fournisseur;paye
-// - date : JJ/MM/AAAA ou AAAA-MM-JJ
-// - categorie : nom d'une catégorie existante (sinon créée automatiquement)
-// - paye : "oui" (payé en totalité), "non" (rien payé), ou un nombre (payé partiellement)
+// Une ligne par article : date;produit;categorie;cartons;contenu;prix;fournisseur;paye
+// - date : JJ/MM/AAAA (ou AAAA-MM-JJ) — une vraie date, pas avant 2020, pas à plus d'un mois
+// - categorie : peut rester vide si le produit existe déjà (on garde sa catégorie habituelle)
+// - prix : en francs ; « 13000 », « 13 000 », « 13.000 » et « 13 000 F » sont tous lus 13 000
+// - paye : « oui » (tout payé), « non » (rien payé) ou le montant déjà payé
+// Rien n'est enregistré avant la validation de l'aperçu ; un achat déjà présent est décoché.
 function normaliserDateImport(s){
   s = String(s||'').trim();
-  if(!s) return null;
-  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
-  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
-  return null;
+  let a, m, j;
+  let r = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4}|\d{2})$/);
+  if(r){ j = Number(r[1]); m = Number(r[2]); a = Number(r[3]); if(r[3].length === 2) a += 2000; }
+  else{
+    r = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(!r) return null;
+    a = Number(r[1]); m = Number(r[2]); j = Number(r[3]);
+  }
+  const d = new Date(a, m-1, j);
+  if(d.getFullYear() !== a || d.getMonth() !== m-1 || d.getDate() !== j) return null;   // 31/02, mois 13…
+  const iso = a + '-' + String(m).padStart(2,'0') + '-' + String(j).padStart(2,'0');
+  const limite = new Date(Date.now() + 31*86400000).toISOString().slice(0,10);
+  if(a < 2020 || iso > limite) return null;       // faute de frappe probable (1999, 2062…)
+  return iso;
 }
-function versNombreImport(s){
-  s = String(s||'').trim().replace(/\s/g,'').replace(/,/g,'.');
-  const n = parseFloat(s);
-  return isNaN(n) ? 0 : n;
+// Lit un nombre. avecMilliers : « 13.000 », « 13,000 », « 1.300.000 » = 13 000 / 1 300 000 (francs entiers).
+// Renvoie NaN quand ce n'est pas un nombre : jamais 0 en silence.
+function versNombreImport(s, avecMilliers){
+  s = String(s==null?'':s).replace(/[\s  ]/g,'');
+  s = s.replace(/^(fcfa|f\.?cfa|xof|cfa|f)(?=[\d-])/i,'').replace(/(fcfa|f\.?cfa|xof|cfa|f)$/i,'');
+  if(!s) return NaN;
+  if(avecMilliers && /^-?\d{1,3}([.,]\d{3})+$/.test(s)) s = s.replace(/[.,]/g,'');
+  s = s.replace(',', '.');
+  if(!/^-?\d+(\.\d+)?$/.test(s)) return NaN;
+  return parseFloat(s);
 }
 function categorieIdParNomImport(nom){
   nom = nomSain(nom);
@@ -818,109 +835,212 @@ function categorieIdParNomImport(nom){
   }
   return c.id;
 }
-// Découpe une ligne CSV en tenant compte de ; ou , comme séparateur
+// Découpe une ligne : séparateur ; ou tabulation ou virgule, guillemets respectés
 function decoupeLigneCSV(ligne){
-  const sep = ligne.includes(';') ? ';' : ',';
-  return ligne.split(sep).map(x=>x.trim());
+  const sep = ligne.indexOf(';') >= 0 ? ';' : (ligne.indexOf('\t') >= 0 ? '\t' : ',');
+  const champs = [];
+  let cur = '', guill = false;
+  for(let i=0;i<ligne.length;i++){
+    const ch = ligne[i];
+    if(ch === '"'){
+      if(guill && ligne[i+1] === '"'){ cur += '"'; i++; }
+      else guill = !guill;
+    } else if(ch === sep && !guill){ champs.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  champs.push(cur.trim());
+  return champs;
 }
-// Analyse le texte collé/importé et renvoie {lignes, erreurs}
+// Catégorie à utiliser pour un produit : sa catégorie habituelle d'abord (vos vraies données),
+// puis le nom donné dans le fichier (exact ou proche), sinon « à créer ».
+function resoudreCategorieImport(produitNom, categorieNom){
+  const prod = DB.produits.find(p=> p.nom.toUpperCase() === produitNom.toUpperCase());
+  if(prod && DB.categories.some(c=> c.id === prod.categorieId)) return { catId: prod.categorieId, source: 'produit' };
+  if(categorieNom){
+    const ex = DB.categories.find(c=> dicteSansAccent(c.nom) === dicteSansAccent(categorieNom));
+    if(ex) return { catId: ex.id, source: 'nom' };
+    const pr = dicteTrouverCategorie(categorieNom);
+    if(pr.etat === 'ok') return { catId: pr.catId, source: 'proche' };
+  }
+  return { catId: null, source: 'nouvelle' };
+}
+// Même jour, même produit, même prix, mêmes cartons : déjà enregistré (import fait deux fois ?)
+function achatDejaEnregistreImport(l){
+  const nom = l.produitNom.toUpperCase();
+  return (DB.achats||[]).some(a=> !a.reporte && a.date === l.date && String(a.produit||'').toUpperCase() === nom
+    && Math.round(a.prixGlobal) === l.prixGlobal && Math.round((a.cartons||0)*100) === Math.round(l.cartons*100));
+}
+// Analyse le texte et renvoie {lignes, erreurs} — chaque ligne refusée dit pourquoi
 function analyserCSVAchatsImport(texte){
-  const lignesBrutes = String(texte||'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
+  texte = String(texte||'').replace(/^﻿/, '');
+  const brutes = texte.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length);
   const lignes = [];
   const erreurs = [];
-  lignesBrutes.forEach((ligne, i)=>{
-    const champs = decoupeLigneCSV(ligne);
-    const [dateStr, produit, categorie, cartonsStr, contenuStr, prixStr, fournisseur, payeStr] = champs;
-    // ignorer la ligne d'en-tête si elle contient le mot "date"
-    if(i===0 && /^date$/i.test((dateStr||'').trim())) return;
+  brutes.forEach((ligne, i)=>{
+    const [dateStr, produit, categorie, cartonsStr, contenuStr, prixStr, fournisseur, payeStr] = decoupeLigneCSV(ligne);
+    if(i === 0 && /^date$/i.test((dateStr||'').trim())) return;      // ligne d'en-tête
+    const ou = 'Ligne ' + (i+1) + ' ignorée';
     const date = normaliserDateImport(dateStr);
-    if(!date || !produit || !categorie){
-      erreurs.push('Ligne '+(i+1)+' ignorée (incomplète) : '+ligne);
-      return;
-    }
-    const cartons = versNombreImport(cartonsStr);
-    const contenu = versNombreImport(contenuStr) || 1;
-    const prixGlobal = versNombreImport(prixStr);
+    if(!date){ erreurs.push(ou + ' : date illisible ou invraisemblable « ' + (dateStr||'') + ' »'); return; }
+    const produitNom = nomSain(produit);
+    if(!produitNom){ erreurs.push(ou + ' : produit manquant'); return; }
+    const cartons = versNombreImport(cartonsStr, false);
+    if(!(cartons > 0)){ erreurs.push(ou + ' (' + produitNom + ') : nombre de cartons invalide « ' + (cartonsStr||'') + ' »'); return; }
+    const contenu = String(contenuStr||'').trim() === '' ? 1 : versNombreImport(contenuStr, false);
+    if(!(contenu > 0)){ erreurs.push(ou + ' (' + produitNom + ') : contenu par carton invalide « ' + (contenuStr||'') + ' »'); return; }
+    const prixGlobal = Math.round(versNombreImport(prixStr, true));
+    if(!(prixGlobal > 0)){ erreurs.push(ou + ' (' + produitNom + ') : prix invalide « ' + (prixStr||'') + ' »'); return; }
     let montantPaye = 0;
     const p = String(payeStr||'').trim().toLowerCase();
-    if(p==='oui' || p==='tout' || p==='total') montantPaye = prixGlobal;
-    else if(p==='' || p==='non' || p==='rien' || p==='0') montantPaye = 0;
-    else montantPaye = versNombreImport(payeStr);
-    lignes.push({
-      date, produitNom: nomSain(produit), categorieNom: nomSain(categorie),
-      cartons, contenu, prixGlobal, fournisseur: (fournisseur||'').trim(), montantPaye
-    });
+    if(['oui','tout','total','paye','payé'].indexOf(p) >= 0) montantPaye = prixGlobal;
+    else if(['','non','rien','0'].indexOf(p) >= 0) montantPaye = 0;
+    else{
+      const v = versNombreImport(payeStr, true);
+      if(isNaN(v) || v < 0){ erreurs.push(ou + ' (' + produitNom + ') : montant payé illisible « ' + payeStr + ' »'); return; }
+      montantPaye = Math.min(Math.round(v), prixGlobal);
+    }
+    const categorieNom = nomSain(categorie);
+    const res = resoudreCategorieImport(produitNom, categorieNom);
+    if(!res.catId && !categorieNom){ erreurs.push(ou + ' (' + produitNom + ') : produit nouveau, il faut indiquer sa catégorie'); return; }
+    const l = { date, produitNom, categorieNom, cartons, contenu, prixGlobal, fournisseur: nomSain(fournisseur),
+                montantPaye, catId: res.catId, catSource: res.source };
+    l.doublon = achatDejaEnregistreImport(l);
+    lignes.push(l);
   });
   return { lignes, erreurs };
 }
-// Ouvre la fenêtre de choix de fichier et affiche l'aperçu avant validation
+// Lit un fichier texte (UTF-8, ou Windows-1252 si les accents sortent abîmés : fichiers d'Excel)
+function lireFichierTexteImport(file, suite){
+  const lire = (enc)=>{
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const t = String(ev.target.result||'');
+      if(!enc && t.indexOf('�') >= 0) lire('windows-1252'); else suite(t);
+    };
+    reader.onerror = ()=> toast('Impossible de lire ce fichier','err');
+    if(enc) reader.readAsText(file, enc); else reader.readAsText(file);
+  };
+  lire(null);
+}
+// Ouvre le choix de fichier puis l'aperçu avant validation
 function openImportAchatsCSV(){
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.csv,.txt';
+  input.accept = '.csv,.txt,text/csv,text/plain';
   input.style.display = 'none';
   document.body.appendChild(input);
   input.addEventListener('change', e=>{
     const file = e.target.files[0];
     document.body.removeChild(input);
     if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ev=>{
-      const { lignes, erreurs } = analyserCSVAchatsImport(ev.target.result);
+    lireFichierTexteImport(file, texte=>{
+      const { lignes, erreurs } = analyserCSVAchatsImport(texte);
       if(!lignes.length){
-        toast('Aucune ligne valide dans ce fichier','err');
+        if(erreurs.length) afficherApercuImportAchats([], erreurs);
+        else toast('Aucune ligne valide dans ce fichier','err');
         return;
       }
       window._importAchatsEnAttente = lignes;
       afficherApercuImportAchats(lignes, erreurs);
-    };
-    reader.onerror = ()=> toast('Impossible de lire ce fichier','err');
-    reader.readAsText(file);
+    });
   });
   input.click();
 }
 function afficherApercuImportAchats(lignes, erreurs){
-  const total = lignes.reduce((s,l)=> s+l.prixGlobal, 0);
+  const dev = DB.parametres.devise;
+  const nbDoublons = lignes.filter(l=>l.doublon).length;
+  const optionsCat = (l)=>{
+    let h = '';
+    if(!l.catId && l.categorieNom) h += `<option value="__new__" selected>➕ Créer « ${dicteEchapper(l.categorieNom)} » (prix de vente 0 à régler ensuite)</option>`;
+    h += DB.categories.map(c=> `<option value="${c.id}" ${c.id===l.catId?'selected':''}>${c.nom}</option>`).join('');
+    return h;
+  };
   sheet(`
     <h2>📤 Aperçu de l'import</h2>
-    <div class="s-sub">${lignes.length} achat(s) trouvé(s) • total ${fmt(total)} ${DB.parametres.devise}</div>
-    <div class="tbl-wrap" style="max-height:320px;overflow:auto;margin-top:10px">
-      <table class="tbl">
-        <tr><th>Date</th><th>Produit</th><th class="num">Qté</th><th class="num">Montant</th></tr>
-        ${lignes.map(l=>`<tr>
-          <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(l.date)}</td>
-          <td><div style="font-weight:600">${l.produitNom}</div>
-              <div style="font-size:11px;color:var(--texte-faible)">${l.categorieNom}${l.fournisseur?' • '+l.fournisseur:''}</div></td>
-          <td class="num">${fmt(Math.round(l.cartons*l.contenu))}</td>
-          <td class="num">${fmt(l.prixGlobal)}</td>
-        </tr>`).join('')}
-      </table>
+    <div class="s-sub">${lignes.length} achat(s) lu(s). Décochez ce que vous ne voulez pas importer.</div>
+    ${nbDoublons ? `<div class="hint" style="color:var(--ambre);margin:8px 0">⚠️ ${nbDoublons} achat(s) ressemblent à des achats DÉJÀ enregistrés (même jour, même produit, même prix) : ils sont décochés.</div>` : ''}
+    <div style="max-height:46vh;overflow:auto;margin-top:10px">
+    ${lignes.map((l,i)=>{
+      const note = l.doublon ? `<span style="color:var(--ambre)">⚠️ déjà enregistré</span>`
+        : (!l.catId ? `<span style="color:var(--ambre)">catégorie « ${dicteEchapper(l.categorieNom)} » inconnue</span>`
+        : (l.catSource==='produit' ? `catégorie habituelle du produit`
+        : (l.catSource==='proche' ? `« ${dicteEchapper(l.categorieNom)} » lu comme une catégorie existante` : '')));
+      return `<div class="cat-row imp-ligne" data-i="${i}" style="flex-direction:column;align-items:stretch;gap:8px">
+        <label style="display:flex;gap:10px;align-items:flex-start">
+          <input type="checkbox" class="imp-ok" ${l.doublon?'':'checked'} onchange="majTotalImport()" style="width:22px;height:22px;margin-top:2px;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;gap:8px"><b>${dicteEchapper(l.produitNom)}</b><b>${fmt(l.prixGlobal)} ${dev}</b></div>
+            <div class="cat-meta">${dateFr(l.date)} • ${l.cartons}×${l.contenu} = ${fmt(l.cartons*l.contenu)} • ${dicteEchapper(l.fournisseur) || 'sans fournisseur'} • payé ${fmt(l.montantPaye)}</div>
+            ${note ? `<div class="cat-meta" style="margin-top:3px">${note}</div>` : ''}
+          </div>
+        </label>
+        <select class="input imp-cat" style="padding:10px 38px 10px 12px;font-size:14px">${optionsCat(l)}</select>
+      </div>`;
+    }).join('')}
     </div>
-    ${erreurs.length ? `<div class="hint" style="margin-top:10px;color:var(--rouge)">⚠️ ${erreurs.length} ligne(s) ignorée(s) :<br>${erreurs.slice(0,5).join('<br>')}</div>` : ''}
-    <div class="btn-group" style="margin-top:14px">
+    ${erreurs.length ? `<div class="hint" style="margin-top:10px;color:var(--rouge)">⚠️ ${erreurs.length} ligne(s) refusée(s) :<br>${erreurs.slice(0,6).map(dicteEchapper).join('<br>')}${erreurs.length>6?'<br>… et '+(erreurs.length-6)+' autre(s)':''}</div>` : ''}
+    <div class="hint" id="impTotal" style="margin:12px 0 8px;font-size:13px"></div>
+    <div class="btn-group">
       <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
-      <button class="btn btn-ambre" onclick="confirmerImportAchatsCSV()">✓ Importer ${lignes.length} achat(s)</button>
+      <button class="btn btn-ambre" onclick="confirmerImportAchatsCSV()">✓ Importer les achats cochés</button>
     </div>
   `);
+  majTotalImport();
+}
+// Total des lignes cochées, et ce que ça change dans la caisse
+function majTotalImport(){
+  const lignes = window._importAchatsEnAttente || [];
+  const el = $('#impTotal');
+  if(!el) return;
+  let n = 0, total = 0, sortie = 0;
+  document.querySelectorAll('#sheet .imp-ligne').forEach(row=>{
+    if(!row.querySelector('.imp-ok').checked) return;
+    const l = lignes[Number(row.dataset.i)];
+    if(l){ n++; total += l.prixGlobal; sortie += Math.min(l.montantPaye, l.prixGlobal); }
+  });
+  const dev = DB.parametres.devise;
+  const apres = soldeCaisse() - sortie;
+  el.innerHTML = n
+    ? `<b>${n} achat(s)</b> • total ${fmt(total)} ${dev}<br>Sortie de caisse : <b>${fmt(sortie)} ${dev}</b> → il vous resterait <b style="color:${apres<0?'var(--rouge)':'var(--vert)'}">${fmt(apres)} ${dev}</b>${total>sortie?`<br>Reste à payer aux fournisseurs : ${fmt(total-sortie)} ${dev}`:''}`
+    : 'Aucun achat coché.';
+}
+// Enregistre les achats choisis, en UNE seule écriture (pas une par ligne)
+// choix : [{ l: ligne analysée, catId: id de catégorie ou '__new__' (= la créer) }]
+function importerLignesAchats(choix){
+  let n = 0, total = 0, sortie = 0, sansCat = 0;
+  _sauvegardeEnPause = true;
+  try{
+    for(const ch of choix){
+      const l = ch.l;
+      let catId = ch.catId;
+      if(catId === '__new__') catId = categorieIdParNomImport(l.categorieNom);
+      if(!catId){ sansCat++; continue; }
+      ajouterAchat({ date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom, categorieId: catId,
+        cartons: l.cartons, contenu: l.contenu, prixGlobal: l.prixGlobal, montantPaye: l.montantPaye });
+      n++; total += l.prixGlobal; sortie += Math.min(l.montantPaye, l.prixGlobal);
+    }
+  } finally {
+    _sauvegardeEnPause = false;
+    if(n) sauverDB();          // une seule écriture, même si une ligne a posé problème
+  }
+  return { n, total, sortie, sansCat };
 }
 function confirmerImportAchatsCSV(){
   const lignes = window._importAchatsEnAttente || [];
-  let n = 0;
-  for(const l of lignes){
-    const categorieId = categorieIdParNomImport(l.categorieNom);
-    ajouterAchat({
-      date: l.date, fournisseur: l.fournisseur, produitNom: l.produitNom,
-      categorieId, cartons: l.cartons, contenu: l.contenu,
-      prixGlobal: l.prixGlobal, montantPaye: l.montantPaye
-    });
-    n++;
-  }
+  const choix = [];
+  document.querySelectorAll('#sheet .imp-ligne').forEach(row=>{
+    if(!row.querySelector('.imp-ok').checked) return;
+    const l = lignes[Number(row.dataset.i)];
+    if(l) choix.push({ l, catId: row.querySelector('.imp-cat').value });
+  });
+  if(!choix.length){ toast('Aucun achat coché','err'); return; }
+  const r = importerLignesAchats(choix);
   window._importAchatsEnAttente = null;
   closeSheet();
-  toast(n+' achat(s) importé(s) ✓');
+  toast(r.n + ' achat(s) importé(s) • sortie de caisse ' + fmt(r.sortie) + ' ' + DB.parametres.devise);
   renderApp();
 }
-// Télécharge un modèle vide (avec un exemple) pour que l'utilisateur sache quoi coller
+// Télécharge un modèle (avec un exemple) pour que l'utilisateur sache quoi préparer
 function telechargerModeleCSVAchats(){
   const modele = 'date;produit;categorie;cartons;contenu;prix;fournisseur;paye\n'
     + '19/10/2026;FANTA;Grand Canette;1;12;8900;Z DEPOT;oui\n';
@@ -1021,6 +1141,7 @@ function supprimerPaiement(id){
   if(!p) return;
   // ré-imputer à l'envers : on retire le montant des achats de ce fournisseur (du plus récent payé)
   let reste = p.montant;
+  const retraits = [];     // ce qui a été retiré de chaque achat : permet de tout remettre à l'identique
   const achatsFour = DB.achats
     .filter(a=>a.fournisseurId===p.fournisseurId && (a.montantPaye||0)>0)
     .sort((a,b)=> a.date<b.date?1:-1);  // du plus récent
@@ -1028,8 +1149,12 @@ function supprimerPaiement(id){
     if(reste<=0) break;
     const retire = Math.min(reste, a.montantPaye||0);
     a.montantPaye -= retire;
+    retraits.push({ achatId: a.id, montant: retire });
     reste -= retire;
   }
+  const f = DB.fournisseurs.find(x=>x.id===p.fournisseurId);
+  versCorbeille('paiement', { paiement: p, retraits },
+    'Paiement ' + (f ? f.nom : 'fournisseur') + ' du ' + dateFr(p.date) + ' (' + fmt(p.montant) + ' ' + DB.parametres.devise + ')');
   DB.paiements = DB.paiements.filter(x=>x.id!==id);
   sauverDB();
 }
@@ -1810,6 +1935,18 @@ function restaurerCorbeille(id){
   else if(item.type==='venteCafe'){ DB.cafeVentes.push(d); }
   else if(item.type==='achatCafe'){ DB.cafeAchats.push(d); }
   else if(item.type==='regulCaisse'){ DB.regularisationsCaisse.push(d); }
+  else if(item.type==='paiement'){
+    const p = d.paiement;
+    // fournisseur disparu depuis : on ne recrée pas un paiement sans propriétaire
+    if(!p || !DB.fournisseurs.some(f=>f.id===p.fournisseurId)) return false;
+    if(!DB.paiements.some(x=>x.id===p.id)){
+      DB.paiements.push(p);
+      for(const r of (d.retraits||[])){      // on remet exactement ce qui avait été retiré de chaque achat
+        const a = DB.achats.find(x=>x.id===r.achatId);
+        if(a) a.montantPaye = Math.min(Number(a.prixGlobal)||0, (a.montantPaye||0) + r.montant);
+      }
+    }
+  }
   DB.corbeille = DB.corbeille.filter(x=>x.id!==id);
   sauverDB();
   return true;
@@ -2069,7 +2206,7 @@ function renderApp(){
       <div style="display:flex;align-items:center;gap:9px">
         <button onclick="lockApp()" title="Verrouiller"
           style="background:var(--ardoise-2);border:1px solid var(--bord);color:var(--texte);
-          width:38px;height:38px;border-radius:11px;font-size:17px;cursor:pointer">🔒</button>
+          width:44px;height:44px;border-radius:12px;font-size:18px;cursor:pointer">🔒</button>
         <div class="tb-date">${dateFr(auj())}</div>
       </div>
     </div>
@@ -2099,7 +2236,7 @@ function go(page){
   PAGE = page;
   document.querySelectorAll('.nav-item').forEach(b=> b.classList.toggle('active', b.dataset.page===page));
   const fab = $('#fab');
-  fab.style.display = ['inventaire','achats'].includes(page) ? 'grid' : 'none';
+  fab.style.display = ['achats'].includes(page) ? 'grid' : 'none';   // sur l'inventaire il ne servait à rien et couvrait les boutons
   const c = $('#pageContent');
   if(page==='accueil') c.innerHTML = pageAccueil();
   else if(page==='caisse') { c.innerHTML = pageCaisse(); bindCaisse && bindCaisse(); }
@@ -2116,7 +2253,6 @@ function go(page){
   else if(page==='rations') { c.innerHTML = pageRations(); }
   else if(page==='archives') { c.innerHTML = pageArchives(); }
   else if(page==='semaineDetail') { c.innerHTML = pageSemaineDetail(); }
-  else if(page==='graphiques') { c.innerHTML = pageGraphiques(); }
   else if(page==='benefice') { c.innerHTML = pageBenefice(); bindBenefice && bindBenefice(); }
   else if(page==='plus') { c.innerHTML = pagePlus(); bindPlus(); }
 }
@@ -2130,6 +2266,26 @@ function onFab(){
 /* ============================================================
    FRIGO — Pages
    ============================================================ */
+
+function blocHistoriqueInventaires(){
+  return `
+    ${DB.inventaires.length ? `
+    <div class="card">
+      <div class="card-head"><div class="card-title">📋 Historique inventaires</div></div>
+      <div class="hint" style="margin-bottom:10px">Touchez une ligne pour changer la date ou supprimer.</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <tr><th>Date</th><th class="num">Vendu</th><th class="num">Montant</th></tr>
+        ${[...DB.inventaires].reverse().slice(0,15).map(inv=>{
+          const totalVendu = inv.lignes.reduce((s,l)=>s+l.vendu,0);
+          return `<tr style="cursor:pointer" onclick="openInventaireSheet('${inv.id}')">
+            <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(inv.date)}${inv.heure?' '+inv.heure:''}</td>
+            <td class="num">${fmt(totalVendu)}</td>
+            <td class="num" style="color:var(--givre)">${fmt(inv.totalCA)}</td>
+          </tr>`;
+        }).join('')}
+      </table></div>
+    </div>` : ''}`;
+}
 
 // ---------- PAGE ACCUEIL (tableau de bord) ----------
 function pageAccueil(){
@@ -2154,21 +2310,15 @@ function pageAccueil(){
         <div class="m-label">Ventes totales</div>
         <div class="m-value mono">${fmt(s.totalVentes)}</div>
       </div>
-      <div class="metric">
+      <div class="metric" style="grid-column:span 2">
         <div class="m-label">Valeur du stock</div>
         <div class="m-value mono">${fmt(s.valeurStock)}</div>
-      </div>
-      <div class="metric">
-        <div class="m-label">Résultat caisse</div>
-        <div class="m-value mono">${fmt(s.resultatCaisse)}</div>
       </div>
     </div>
 
     ${blocVentesNonComptees()}
     ${blocAlerteSauvegarde()}
     ${blocTableauBord()}
-    ${blocDetailCaisse()}
-    <button class="btn btn-ghost" onclick="go('caisse')" style="margin-bottom:16px">💰 Ouvrir la caisse</button>
 
     ${alertes.length ? `
     <div class="card">
@@ -2184,52 +2334,213 @@ function pageAccueil(){
       }).join('')}
     </div>` : ''}
 
-    <div class="card">
-      <div class="card-head"><div class="card-title">📦 Stock par catégorie</div></div>
-      ${DB.categories.map(c=>{
-        const stk = stockCategorie(c.id);
-        const st = statutStock(stk);
-        return `<div class="cat-row">
-          <span class="cat-dot" style="background:${c.couleur}"></span>
-          <div class="cat-info"><div class="cat-name">${c.nom}</div>
-          <div class="cat-meta">${c.prix} ${DB.parametres.devise}</div></div>
-          <span class="pill ${st.pill}">${fmt(stk)}</span>
-        </div>`;
-      }).join('')}
-    </div>
-
-    <div class="card">
-      <div class="card-head"><div class="card-title">📊 Résumé financier</div></div>
-      <table class="tbl">
-        <tr><td>Total achats</td><td class="num">${fmtF(s.totalAchats)}</td></tr>
-        <tr><td>Total ventes (encaissé)</td><td class="num" style="color:var(--givre)">${fmtF(s.totalVentes)}</td></tr>
-        <tr><td>Dépenses</td><td class="num" style="color:var(--rouge)">${fmtF(s.totalDepenses)}</td></tr>
-        <tr><td>Versements vendeur</td><td class="num">${fmtF(s.totalVersements)}</td></tr>
-        <tr><td><b>Résultat caisse</b></td><td class="num" style="color:var(--ambre);font-weight:800">${fmtF(s.resultatCaisse)}</td></tr>
-      </table>
-      <div class="hint" style="margin-top:8px">Résultat caisse = ventes encaissées − dépenses</div>
-    </div>
-
-    ${DB.inventaires.length ? `
-    <div class="card">
-      <div class="card-head"><div class="card-title">📋 Historique inventaires</div></div>
-      <div class="hint" style="margin-bottom:10px">Touchez une ligne pour changer la date ou supprimer.</div>
-      <div class="tbl-wrap"><table class="tbl">
-        <tr><th>Date</th><th class="num">Vendu</th><th class="num">Montant</th></tr>
-        ${[...DB.inventaires].reverse().slice(0,15).map(inv=>{
-          const totalVendu = inv.lignes.reduce((s,l)=>s+l.vendu,0);
-          return `<tr style="cursor:pointer" onclick="openInventaireSheet('${inv.id}')">
-            <td style="white-space:nowrap;font-size:12px;color:var(--texte-doux)">${dateFr(inv.date)}${inv.heure?' '+inv.heure:''}</td>
-            <td class="num">${fmt(totalVendu)}</td>
-            <td class="num" style="color:var(--givre)">${fmt(inv.totalCA)}</td>
-          </tr>`;
-        }).join('')}
-      </table></div>
-    </div>` : ''}
   </div>`;
 }
 
 // ---------- PAGE INVENTAIRE (le coeur) ----------
+// ============================================================
+//  DICTÉE VOCALE (micro 🎤 du clavier de l'iPhone)
+//  L'iPhone écrit ce qu'on dit ; FRIGO lit ce texte, reconnaît les
+//  catégories et les chiffres, puis montre un aperçu à vérifier.
+//  Rien n'est jamais enregistré sans que la personne ait validé.
+// ============================================================
+const _dicteHas = (o,k)=> Object.prototype.hasOwnProperty.call(o,k);
+const DICTE_UNITES = { zero:0, un:1, une:1, deux:2, trois:3, quatre:4, cinq:5, six:6, sept:7, huit:8, neuf:9,
+  dix:10, onze:11, douze:12, treize:13, quatorze:14, quinze:15, seize:16 };
+const DICTE_DIZAINES = { vingt:20, trente:30, quarante:40, cinquante:50, soixante:60 };
+const DICTE_MOTS_VIDES = ['et','de','du','des','d','le','la','les','l','il','y','a','reste','restent',
+  'puis','ensuite','apres','carton','cartons','bouteille','bouteilles','unite','unites'];
+
+function dicteSansAccent(s){
+  return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/œ/g,'oe').replace(/æ/g,'ae');
+}
+function dicteEchapper(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// « quarante-neuf » → 49 ; « quatre-vingt-dix-huit » → 98 ; « deux mille trois cent » → 2300
+function dicteMotsVersChiffres(txt){
+  const toks = txt.replace(/-/g,' ').replace(/([,;.])/g,' $1 ').split(/\s+/).filter(Boolean);
+  const estNb = w=> _dicteHas(DICTE_UNITES,w) || _dicteHas(DICTE_DIZAINES,w) || w==='cent' || w==='cents' || w==='mille' || w==='vingts';
+  function peutAjouter(cur, v){
+    const reste = cur % 100;
+    if(reste === 0) return true;
+    if(v >= 20) return false;
+    if((reste === 10 || reste === 70 || reste === 90) && v >= 7 && v <= 9) return true;  // dix-sept, soixante-dix-sept, quatre-vingt-dix-huit
+    if([20,30,40,50,60,80].indexOf(reste) >= 0 && v >= 1 && v <= 9) return true; // vingt-trois…
+    if((reste === 60 || reste === 80) && v >= 10 && v <= 16) return true;       // soixante-quinze, quatre-vingt-douze
+    return false;
+  }
+  const out = [];
+  let i = 0;
+  while(i < toks.length){
+    if(!estNb(toks[i])){ out.push(toks[i]); i++; continue; }
+    let total = 0, cur = 0, prec = '', j = i;
+    while(j < toks.length){
+      let w = toks[j];
+      if(w === 'et' && /^(vingt|trente|quarante|cinquante|soixante)$/.test(prec) && j+1 < toks.length && /^(un|une|onze)$/.test(toks[j+1])){ j++; continue; }
+      if(w === 'vingts') w = 'vingt';
+      if(w === 'cents') w = 'cent';
+      if(w === 'vingt' && prec === 'quatre' && cur % 10 === 4){ cur = cur - 4 + 80; }
+      else if(_dicteHas(DICTE_UNITES,w)){ if(!peutAjouter(cur, DICTE_UNITES[w])) break; cur += DICTE_UNITES[w]; }
+      else if(_dicteHas(DICTE_DIZAINES,w)){ if(!peutAjouter(cur, DICTE_DIZAINES[w])) break; cur += DICTE_DIZAINES[w]; }
+      else if(w === 'cent'){ if(cur >= 10) break; cur = (cur || 1) * 100; }
+      else if(w === 'mille'){ if(total > 0 || cur >= 1000) break; total += (cur || 1) * 1000; cur = 0; }
+      else break;
+      prec = w; j++;
+    }
+    if(j === i){ out.push(toks[i]); i++; continue; }
+    out.push(String(total + cur));
+    i = j;
+  }
+  return out.join(' ');
+}
+// Texte dicté → texte propre : minuscules, sans accents, chiffres en chiffres
+function dicteNormaliser(brut){
+  let t = dicteSansAccent(brut);
+  t = t.replace(/(\d)[  ](?=\d{3}(?!\d))/g,'$1');   // « 1 200 » (espace insécable) → 1200
+  t = t.replace(/[  ]/g,' ');
+  t = t.replace(/\b([ldjnm]|qu)['’]/g,' ').replace(/['’`´]/g,'');  // l'orange → orange ; pap's → paps
+  t = dicteMotsVersChiffres(t);
+  return t.replace(/\s+/g,' ').trim();
+}
+function dicteJetons(texte){
+  const vides = DICTE_MOTS_VIDES;
+  return String(texte||'').split(/[^a-z0-9]+/).filter(w=> w && vides.indexOf(w) < 0);
+}
+function dicteDistance(a,b){
+  const m = a.length, n = b.length;
+  if(!m) return n;
+  if(!n) return m;
+  let prev = [];
+  for(let j=0;j<=n;j++) prev[j] = j;
+  for(let i=1;i<=m;i++){
+    const cur = [i];
+    for(let j=1;j<=n;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1] + (a[i-1]===b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+// même mot, à une petite faute près (petit/petite, canette/cannette, pap/paps)
+function dicteMotProche(a,b){
+  if(a === b) return true;
+  const mini = Math.min(a.length, b.length), maxi = Math.max(a.length, b.length);
+  if(mini >= 3 && (a.indexOf(b) === 0 || b.indexOf(a) === 0) && maxi - mini <= 2) return true;
+  if(mini < 4) return false;
+  return dicteDistance(a,b) <= (maxi >= 7 ? 2 : 1);
+}
+// Cherche la catégorie qui ressemble le plus au nom dit.
+// → { etat:'ok'|'ambigu'|'inconnu', catId, candidats:[ids] }
+function dicteTrouverCategorie(nomDit){
+  const dits = dicteJetons(dicteSansAccent(nomDit).replace(/['’`´]/g,''));
+  if(!dits.length) return { etat:'inconnu', catId:null, candidats:[] };
+  const notes = [];
+  for(const c of DB.categories){
+    const toks = dicteJetons(dicteSansAccent(c.nom).replace(/['’`´]/g,''));
+    if(!toks.length) continue;
+    let trouves = 0;
+    for(const t of toks){ if(dits.some(d=> dicteMotProche(t,d))) trouves++; }
+    let extra = 0;
+    for(const d of dits){ if(!toks.some(t=> dicteMotProche(t,d))) extra++; }
+    notes.push({ id:c.id, ratio: trouves/toks.length, extra });
+  }
+  const bons = notes.filter(n=> n.ratio >= 0.5);
+  if(!bons.length) return { etat:'inconnu', catId:null, candidats:[] };
+  bons.sort((a,b)=> (b.ratio - a.ratio) || (a.extra - b.extra));
+  const tete = bons.filter(n=> n.ratio === bons[0].ratio && n.extra === bons[0].extra);
+  if(tete.length === 1) return { etat:'ok', catId:tete[0].id, candidats:[tete[0].id] };
+  return { etat:'ambigu', catId:null, candidats:tete.map(n=>n.id) };
+}
+// Lit une phrase de comptage : « grand canette 49, petit canette 14, Bramali 98 »
+// (le chiffre peut aussi venir avant le nom : « 49 grand canette »)
+// → { lignes:[{dit, valeur, etat, catId, candidats}], restes:'texte non compris' }
+function analyserDicteInventaire(brut){
+  const t = dicteNormaliser(brut);
+  const res = { lignes:[], restes:'', texte:t };
+  if(!t) return res;
+  const morceaux = t.split(/(\d+)/);
+  const noms = [], nbs = [];
+  for(let i=0;i<morceaux.length;i++){ if(i%2) nbs.push(Number(morceaux[i])); else noms.push(morceaux[i]); }
+  if(!nbs.length){ res.restes = t; return res; }
+  const chiffreAvant = dicteJetons(noms[0]).length === 0;   // « 49 grand canette 14 … »
+  for(let k=0;k<nbs.length;k++){
+    const nom = (chiffreAvant ? noms[k+1] : noms[k]) || '';
+    const trouve = dicteTrouverCategorie(nom);
+    res.lignes.push({ dit: dicteJetons(nom).join(' '), valeur: nbs[k], etat: trouve.etat, catId: trouve.catId, candidats: trouve.candidats });
+  }
+  if(!chiffreAvant) res.restes = dicteJetons(noms[nbs.length]).join(' ');
+  return res;
+}
+
+// ----- Écran : lecture, aperçu, remplissage des cases -----
+function dicteLireInventaire(){
+  const zone = $('#invDicte');
+  const box = $('#invDicteApercu');
+  if(!zone || !box) return;
+  const res = analyserDicteInventaire(zone.value);
+  if(!res.lignes.length){
+    box.innerHTML = `<div class="hint" style="margin-top:12px;color:var(--ambre)">⚠️ Je n'ai trouvé aucun chiffre. Dites par exemple : « grand canette 49, petit canette 14, Bramali 98 ».</div>`;
+    return;
+  }
+  const options = (sel)=> `<option value="">— Ignorer cette ligne —</option>` +
+    DB.categories.map(c=> `<option value="${c.id}" ${c.id===sel?'selected':''}>${c.nom}</option>`).join('');
+  box.innerHTML = `
+    <div class="hint" style="margin:14px 0 8px">Vérifiez chaque ligne : vous pouvez changer la catégorie ou le chiffre.</div>
+    ${res.lignes.map(l=>{
+      const etiq = l.etat==='ok' ? `<span style="color:var(--vert)">✓ reconnu</span>`
+        : (l.etat==='ambigu' ? `<span style="color:var(--ambre)">❓ plusieurs possibilités</span>`
+        : `<span style="color:var(--ambre)">❓ non reconnu</span>`);
+      return `<div class="cat-row dicte-ligne" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+          <div class="cat-name" style="font-size:14px">« ${dicteEchapper(l.dit) || '…'} »</div>
+          <div class="cat-meta">${etiq}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <select class="input dicte-cat" onchange="dicteMajNonCites()" style="flex:1;padding:10px 38px 10px 12px;font-size:14px">${options(l.catId)}</select>
+          <input class="cat-input dicte-val" type="number" inputmode="numeric" min="0" value="${l.valeur}">
+        </div>
+      </div>`;
+    }).join('')}
+    ${res.restes ? `<div class="hint" style="color:var(--ambre)">⚠️ Non compris (sans chiffre) : « ${dicteEchapper(res.restes)} »</div>` : ''}
+    <div class="hint" id="dicteNonCites" style="margin-bottom:10px"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="dicteRemplirInventaire()">✓ Remplir les cases du comptage</button>`;
+  dicteMajNonCites();
+}
+function dicteEffacerInventaire(){
+  const zone = $('#invDicte'), box = $('#invDicteApercu');
+  if(zone) zone.value = '';
+  if(box) box.innerHTML = '';
+}
+function dicteMajNonCites(){
+  const el = $('#dicteNonCites');
+  if(!el) return;
+  const pris = {};
+  document.querySelectorAll('#invDicteApercu .dicte-cat').forEach(s=>{ if(s.value) pris[s.value] = true; });
+  const manquantes = DB.categories.filter(c=> !pris[c.id]).map(c=> c.nom);
+  el.innerHTML = manquantes.length
+    ? `Pas citées : ${manquantes.map(dicteEchapper).join(', ')}.<br>Elles gardent le stock théorique (donc aucune vente comptée pour elles).`
+    : '';
+}
+function dicteRemplirInventaire(){
+  let n = 0;
+  const vues = {};
+  document.querySelectorAll('#invDicteApercu .dicte-ligne').forEach(row=>{
+    const cat = row.querySelector('.dicte-cat').value;
+    const val = row.querySelector('.dicte-val').value;
+    if(!cat || val === '' || isNaN(Number(val)) || Number(val) < 0) return;
+    const cible = document.querySelector('#invList .cat-input[data-cat="'+cat+'"]');
+    if(!cible) return;
+    cible.value = Math.round(Number(val));
+    cible.style.borderColor = 'var(--givre)';
+    setTimeout(()=>{ cible.style.borderColor = ''; }, 3000);
+    if(!vues[cat]){ vues[cat] = true; n++; }
+  });
+  if(!n){ toast('Aucune ligne à remplir : choisissez une catégorie','err'); return; }
+  toast(n + ' catégorie(s) remplie(s) — vérifiez, puis touchez Calculer');
+  const liste = $('#invList');
+  if(liste) liste.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function pageInventaire(){
   return `
   <div class="page">
@@ -2237,6 +2548,17 @@ function pageInventaire(){
     <div class="page-sub">Comptez le stock restant. La vente se calcule toute seule.</div>
 
     ${barrePole('vente','inventaire')}
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">🎤 Dicter le comptage</div></div>
+      <div class="hint" style="margin:0 0 10px">Touchez la case, puis le micro 🎤 en bas à droite du clavier de l'iPhone, et dites par exemple : « grand canette 49, petit canette 14, Bramali 98 ».</div>
+      <textarea class="input" id="invDicte" rows="3" lang="fr" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Votre dictée apparaît ici…"></textarea>
+      <div class="btn-group" style="margin-top:10px">
+        <button class="btn btn-ghost" onclick="dicteEffacerInventaire()">Effacer</button>
+        <button class="btn btn-ambre" onclick="dicteLireInventaire()">🔎 Lire</button>
+      </div>
+      <div id="invDicteApercu"></div>
+    </div>
 
     <div class="card">
       <div class="card-head">
@@ -2332,7 +2654,6 @@ function pageAchats(){
       <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
         ${dernier ? `<button class="btn btn-ghost" onclick="refaireDernierAchat()">🔁 Refaire le dernier</button>` : ''}
         <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
-        <button class="btn btn-ghost" onclick="go('achatsjour')">📆 Achats par date</button>
       </div>
       <div class="btn-group" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn btn-ghost" onclick="openImportAchatsCSV()">📤 Importer un fichier (CSV)</button>
@@ -2505,9 +2826,15 @@ function openAchatSheet(editId, prefill){
   });
 
   $('#aDel')?.addEventListener('click', ()=>{
+    // Cet achat a-t-il déjà servi à un inventaire ? Sans lui, le stock deviendrait négatif.
+    const catA = DB.categories.find(c=>c.id===a.categorieId);
+    const stockSans = catA ? stockCategorie(catA.id) - (a.quantite||0) : 0;
+    const alerteStock = (catA && stockSans < 0)
+      ? `<div class="hint" style="color:var(--ambre);margin:10px 0">⚠️ Cet achat a déjà été compté dans un inventaire. Sans lui, le stock de « ${catA.nom} » serait de ${fmt(stockSans)} (négatif). Après la suppression, vérifiez l'inventaire concerné ou régularisez le stock.</div>` : '';
     sheet(`
       <h2>🗑️ Supprimer cet achat ?</h2>
       <div class="s-sub">${a.produit} • ${dateFr(a.date)} • ${fmt(a.prixGlobal)} ${DB.parametres.devise}</div>
+      ${alerteStock}
       <div class="btn-group">
         <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
         <button class="btn btn-danger" id="aDelOk">Oui, supprimer</button>
@@ -2525,7 +2852,7 @@ function openAchatSheet(editId, prefill){
    meme barre, on passe de l'une a l'autre sans repasser par Plus.
    ============================================================ */
 const POLES = {
-  vente:  [['ventes','💵 Vue vente'],['inventaire','📋 Inventaire'],['ventesjour','📅 Jour par jour'],['benefice','📈 Bénéfice'],['graphiques','📊 Graphiques']],
+  vente:  [['ventes','💵 Vue vente'],['inventaire','📋 Inventaire'],['ventesjour','📅 Jour par jour'],['benefice','📈 Bénéfice']],
   achat:  [['achats','📥 Saisir achat'],['achatsjour','📆 Par date'],['fournisseurs','🏢 Fournisseurs'],['stock','📦 Stock']],
   caisse: [['caisse','💰 Caisse'],['epargne','🐖 Épargne'],['rations','🍚 Ration'],['transferts','🔄 Café']]
 };
@@ -2555,12 +2882,8 @@ function pageVentes(){
     </div>
     <div class="hint" style="margin-bottom:16px;text-align:center">${dern ? 'Dernier inventaire : '+dateFr(dern) : "Aucun inventaire pour l'instant"}</div>
 
-    ${blocVentesNonComptees()}
-
     <button class="btn btn-ambre" onclick="go('inventaire')" style="margin-bottom:10px">📋 Faire l'inventaire (enregistrer les ventes)</button>
-    <button class="btn btn-ghost" onclick="go('ventesjour')" style="margin-bottom:10px">📅 Ventes jour par jour</button>
-    <button class="btn btn-ghost" onclick="go('benefice')" style="margin-bottom:10px">📈 Bénéfice et marges par produit</button>
-    <button class="btn btn-ghost" onclick="go('graphiques')" style="margin-bottom:10px">📊 Graphiques</button>
+    ${blocHistoriqueInventaires()}
   </div>`;
 }
 
@@ -2620,6 +2943,7 @@ function pagePlus(){
       <button class="btn btn-ghost" onclick="openCopierSauvegardeSheet()" style="margin-bottom:10px">📋 Copier ma sauvegarde (pour WhatsApp)</button>
       <button class="btn btn-ghost" id="btnImportBig" style="margin-bottom:10px">📤 Restaurer depuis un fichier</button>
       <button class="btn btn-ghost" onclick="openRestaurerTexteSheet()">📥 Restaurer depuis un texte collé</button>
+      ${copiesSecurite().length ? `<button class="btn btn-ghost" style="margin-top:10px" onclick="openRetourArriereSheet()">↩️ Revenir en arrière</button>` : ''}
       <input type="file" id="importFileBig" accept=".json" style="display:none">
       ${(() => {
         const t = localStorage.getItem(DB_KEY+'_time');
@@ -2635,20 +2959,12 @@ function pagePlus(){
     </div>
 
     <div class="card">
-      <div class="card-head"><div class="card-title">🗂️ Où trouver quoi</div></div>
-      <div class="hint" style="line-height:1.9;margin-bottom:10px">
-        <b>💵 Vente</b> — inventaire, jour par jour, bénéfice, graphiques<br>
-        <b>📥 Achat</b> — saisie, par date, fournisseurs, stock<br>
-        <b>💰 Caisse</b> — détail, épargne, ration, transferts<br>
-        <span style="opacity:.8">Utilisez la barre du bas, puis la barre du haut dans chaque pôle.</span>
-      </div>
       <button class="btn btn-ghost" onclick="go('cafe')">☕ Suivi Café (activité à part)</button>
     </div>
 
     <div class="card">
       <div class="card-head"><div class="card-title">🧰 Outils</div></div>
       <div class="btn-group" style="flex-wrap:wrap">
-        <button class="btn btn-ghost" onclick="openRechercheSheet()">🔍 Rechercher</button>
         <button class="btn btn-ghost" onclick="openCorbeilleSheet()">🗑️ Corbeille${(DB.corbeille&&DB.corbeille.length)?' ('+DB.corbeille.length+')':''}</button>
       </div>
       <button class="btn btn-ghost" onclick="exporterExcelComplet()" style="margin-top:10px">📤 Exporter tout en Excel</button>
@@ -2660,12 +2976,8 @@ function pagePlus(){
 
     <div class="card">
       <div class="card-head"><div class="card-title">💸 Dépenses & versements</div></div>
-      <div class="btn-group">
-        <button class="btn btn-ghost" id="addDep">+ Dépense</button>
-        <button class="btn btn-ghost" id="addVers">+ Versement</button>
-      </div>
       ${DB.depenses.length||DB.versements.length ? `
-      <div class="hint" style="margin-top:10px;margin-bottom:4px">Touchez une ligne pour modifier.</div>
+      <div class="hint" style="margin-bottom:4px">Touchez une ligne pour modifier. Pour en ajouter : page Caisse.</div>
       <div class="tbl-wrap"><table class="tbl">
         ${[...DB.depenses.map(d=>({...d,type:'dep'})), ...DB.versements.map(v=>({...v,type:'vers'}))]
           .sort((a,b)=>b.date<a.date?-1:1).slice(0,10).map(x=>`
@@ -2673,7 +2985,7 @@ function pagePlus(){
           <td style="font-size:12px;color:var(--texte-doux)">${dateFr(x.date)}</td>
           <td>${x.type==='dep'?'💸 '+x.motif:'💵 Versement'+(x.note?' ('+x.note+')':'')}</td>
           <td class="num" style="color:${x.type==='dep'?'var(--rouge)':'var(--vert)'}">${fmt(x.montant)}</td></tr>`).join('')}
-      </table></div>`:''}
+      </table></div>`:`<div class="hint">Aucune dépense ni versement. Pour en ajouter : page Caisse.</div>`}
     </div>
 
 
@@ -2770,7 +3082,6 @@ function pageCaisse(){
 
     <button class="btn btn-ambre" onclick="openRegulariserCaisseSheet()" style="margin-bottom:16px">⚖️ Régulariser la caisse (compter l'argent réel)</button>
     <button class="btn btn-ghost" onclick="go('transferts')" style="margin-bottom:16px">🔄 Transférer avec le café</button>
-    <button class="btn btn-ghost" onclick="go('transferts')" style="margin-bottom:16px">🔄 Transférer avec le café</button>
 
     ${blocDetailCaisse()}
 
@@ -2801,12 +3112,8 @@ function pageCaisse(){
           ${cmp.ecart>0?'+':''}${fmt(cmp.ecart)} ${DB.parametres.devise}
         </span>
       </div>
-      ${cmp.statut==='manque' ? `<div class="hint" style="color:var(--rouge)">Le vendeur doit ${fmt(-cmp.ecart)} ${DB.parametres.devise} de plus.</div>` :
-        cmp.statut==='surplus' ? `<div class="hint" style="color:var(--ambre)">Le vendeur a versé ${fmt(cmp.ecart)} ${DB.parametres.devise} de trop.</div>` :
-        `<div class="hint" style="color:var(--vert)">Tout correspond parfaitement.</div>`}
       ${cmp.duParVendeur<0 ? `<div class="hint" style="margin-top:6px">« Devrait verser » est négatif : il manque sûrement l'argent de la caisse que vous lui avez remis pour payer.</div>` : ''}
       ${(!cmp.fournisseursParPatron || (DB.apportsCaisse||[]).length) ? `<button class="btn btn-ghost btn-sm" onclick="openApportSheet()" style="margin-top:12px">➕ Argent de la caisse remis au vendeur</button>` : ''}
-      <button class="btn btn-ghost btn-sm" onclick="go('rations')" style="margin-top:8px">🍚 Ration du vendeur</button>
       ${(DB.apportsCaisse||[]).length ? `<div style="margin-top:10px">
         ${[...(DB.apportsCaisse||[])].sort((a,b)=> a.date<b.date?1:-1).map(a=>`<div class="cat-row">
           <div class="cat-info"><div class="cat-name" style="font-size:14px">${fmt(a.montant)} ${DB.parametres.devise}</div>
@@ -2972,38 +3279,6 @@ function setBeneficePeriode(p){ BENEFICE_PERIODE = p; go('benefice'); }
    FRIGO — Pages Clients & Graphiques
    ============================================================ */
 
-// ---------- PAGE CLIENTS À CRÉDIT ----------
-function pageGraphiques(){
-  // Ventes par jour (12 derniers inventaires)
-  const invs = [...DB.inventaires].sort((a,b)=>a.date<b.date?-1:1).slice(-12);
-  const ventesData = invs.map(i=>({ label: i.date.slice(5), valeur: i.totalCA }));
-  // Stock par catégorie (valeur au prix de vente)
-  const stockData = DB.categories.map(c=>{
-    const stk = stockCategorie(c.id);
-    return { label: c.nom, valeur: stk>0?stk*c.prix:0, couleur: c.couleur, stock: stk };
-  }).filter(x=>x.valeur>0).sort((a,b)=>b.valeur-a.valeur);
-
-  return `
-  <div class="page">
-    <div class="page-title">📊 Graphiques</div>
-    <div class="page-sub">Vos ventes et votre stock en images.</div>
-
-    ${barrePole('vente','graphiques')}
-
-    <div class="card">
-      <div class="card-head"><div class="card-title">📈 Ventes par inventaire</div></div>
-      ${ventesData.length ? graphBarres(ventesData, 'var(--givre)') :
-        `<div class="empty" style="padding:20px"><div style="font-size:13px">Pas encore de ventes</div></div>`}
-    </div>
-
-    <div class="card">
-      <div class="card-head"><div class="card-title">📦 Valeur du stock par catégorie</div></div>
-      ${stockData.length ? graphBarresH(stockData) :
-        `<div class="empty" style="padding:20px"><div style="font-size:13px">Stock vide</div></div>`}
-    </div>
-  </div>`;
-}
-
 /* Graphique à barres verticales (SVG) */
 function graphBarres(data, couleur){
   const max = Math.max(...data.map(d=>d.valeur), 1);
@@ -3021,22 +3296,6 @@ function graphBarres(data, couleur){
     ${barres}
     <text x="${pad}" y="14" font-size="9" fill="#5EEAD4">max ${fmt(max)} ${DB.parametres.devise}</text>
   </svg>`;
-}
-
-/* Graphique à barres horizontales (SVG) avec valeurs */
-function graphBarresH(data){
-  const max = Math.max(...data.map(d=>d.valeur), 1);
-  const rowH = 30, W = 320, labelW = 90, barMax = W - labelW - 60;
-  const rows = data.slice(0,8).map((d,i)=>{
-    const w = Math.max(3, (d.valeur/max) * barMax);
-    const y = i*rowH + 6;
-    return `
-      <text x="0" y="${y+13}" font-size="9" fill="#E8EEF6">${d.label.length>13?d.label.slice(0,12)+'…':d.label}</text>
-      <rect x="${labelW}" y="${y}" width="${w.toFixed(1)}" height="18" rx="3" fill="${d.couleur||'#5EEAD4'}"/>
-      <text x="${labelW+w+4}" y="${y+13}" font-size="8.5" fill="#94A3B8">${fmt(d.valeur)}</text>`;
-  }).join('');
-  const H = Math.min(data.length,8)*rowH + 10;
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${rows}</svg>`;
 }
 
 // ---------- PAGE EMPRUNTS / PRÊTS ----------
@@ -3086,9 +3345,10 @@ function pageCafe(){
         <span>💰 Solde café</span>
         <span style="color:var(--givre,#5eead4)">${fmt(statsCafe().soldeTotal)} ${dev}</span>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="openSoldeCafeSheet()" style="margin-top:8px">✏️ Régler le solde reporté</button>
-      <button class="btn btn-ghost btn-sm" onclick="go('transferts')" style="margin-top:8px;margin-left:8px">🔄 Transférer avec la caisse</button>
-      <button class="btn btn-ghost btn-sm" onclick="go('transferts')" style="margin-top:8px;margin-left:8px">🔄 Transférer avec la caisse</button>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openSoldeCafeSheet()">✏️ Régler le solde reporté</button>
+        <button class="btn btn-ghost btn-sm" onclick="go('transferts')">🔄 Transférer avec la caisse</button>
+      </div>
     </div>
 
     <div class="btn-group" style="flex-wrap:wrap;margin-bottom:16px">
@@ -3169,7 +3429,7 @@ function blocDetailCaisse(){
       ${ligne('Argent de départ', d.depart, '+')}
       ${ligne('Paiements fournisseurs', d.fournisseurs, '-')}
       ${ligne('Dépenses', d.depenses, '-')}
-      ${ligne('Remboursements emprunt', d.remboursements, '-')}
+      ${d.remboursements ? ligne('Remboursements emprunt', d.remboursements, '-') : ''}
       ${d.rations ? ligne('Ration du vendeur', d.rations, '-') : ''}
       ${d.epargneNette ? ligne('Mis de côté (épargne)', d.epargneNette, '-') : ''}
       ${ligne('Transferts avec le café', d.transfertsNet, 'transfert')}
@@ -3336,12 +3596,7 @@ function bindPlus(){
     reader.onload = ev=>{
       try{
         const imported = JSON.parse(ev.target.result);
-        if(!imported.categories){ toast('Fichier invalide','err'); return; }
-        DB = imported;
-        migrerDB();          // recrée les champs manquants (emprunts, café…) des anciennes sauvegardes
-        sauverDB();
-        toast('Données restaurées ✓');
-        renderApp();
+        demanderRestauration(imported);   // montre ce qui va changer, et ne remplace qu'après accord
       }catch(err){ toast('Erreur de lecture','err'); }
     };
     reader.readAsText(file);
@@ -3351,13 +3606,6 @@ function bindPlus(){
   $('#btnExportBig')?.addEventListener('click', faireExport);
   $('#btnImportBig')?.addEventListener('click', ()=> $('#importFileBig').click());
   $('#importFileBig')?.addEventListener('change', e=> faireImport(e.target.files[0]));
-
-  // --- Export ---
-  $('#btnExport')?.addEventListener('click', faireExport);
-
-  // --- Import ---
-  $('#btnImport')?.addEventListener('click', ()=> $('#importFile').click());
-  $('#importFile')?.addEventListener('change', e=> faireImport(e.target.files[0]));
 
   // --- Reset ---
   $('#btnReset')?.addEventListener('click', ()=>{
@@ -3885,8 +4133,11 @@ function payerTout(fId){
 }
 
 function supprimerPaiementUI(payId, fId){
+  const p = DB.paiements.find(x=>x.id===payId);
+  if(!p) return;
+  if(!confirm('Supprimer ce paiement de ' + fmt(p.montant) + ' ' + DB.parametres.devise + ' ?\n\nL\u2019argent revient en caisse et la dette du fournisseur augmente. Vous pourrez le récupérer dans Plus → Corbeille.')) return;
   supprimerPaiement(payId);
-  toast('Paiement supprimé');
+  toast('Paiement supprimé (dans la corbeille)');
   openFournisseurSheet(fId);
 }
 
@@ -4152,7 +4403,7 @@ function openCorbeilleSheet(){
   `);
 }
 function restaurerUI(id){
-  restaurerCorbeille(id);
+  if(!restaurerCorbeille(id)){ toast('Impossible de restaurer cet élément (son fournisseur n\u2019existe plus)','err'); return; }
   toast('Élément restauré ✓');
   openCorbeilleSheet();
 }
@@ -4522,12 +4773,110 @@ function restaurerDepuisTexte(){
   if(!txt){ toast('Collez d\u2019abord votre sauvegarde','err'); return; }
   let data;
   try{ data = JSON.parse(txt); }catch(e){ toast('Ce texte n\u2019est pas une sauvegarde valide','err'); return; }
-  if(!data || !data.categories){ toast('Sauvegarde invalide (pas de données FRIGO)','err'); return; }
+  demanderRestauration(data);       // montre ce qui va changer, et ne remplace qu'après accord
+}
+
+// ============================================================
+//  RESTAURATION SÉCURISÉE
+//  Restaurer REMPLACE tout : on montre d'abord ce qui va changer, et on garde
+//  une copie de l'état actuel pour pouvoir revenir en arrière.
+// ============================================================
+function resumeSauvegarde(d){
+  const achats = (d.achats||[]).filter(a=>!a.reporte);
+  const dates = achats.map(a=>a.date).concat((d.inventaires||[]).map(i=>i.date)).filter(Boolean).sort();
+  return { achats: achats.length, inventaires: (d.inventaires||[]).length, archives: (d.archivesSemaines||[]).length,
+           derniere: dates.length ? dates[dates.length-1] : null };
+}
+function lignesResumeSauvegarde(r){
+  return r.achats + ' achat(s) • ' + r.inventaires + ' inventaire(s) • ' + r.archives + ' semaine(s) archivée(s)<br>'
+    + (r.derniere ? 'Dernière activité : ' + dateFr(r.derniere) : 'Aucune activité');
+}
+function garderCopieAvantRestauration(raison){
+  try{
+    localStorage.setItem('frigo_avant_restauration',
+      JSON.stringify({ date: new Date().toISOString(), raison, version: versionApp(), db: DB }));
+    return true;
+  }catch(e){ return false; }
+}
+function demanderRestauration(data){
+  if(!data || !Array.isArray(data.categories)){ toast('Ce n’est pas une sauvegarde FRIGO','err'); return; }
+  window._restaurationEnAttente = data;
+  const nouv = resumeSauvegarde(data), act = resumeSauvegarde(DB);
+  const plusAncienne = nouv.derniere && act.derniere && nouv.derniere < act.derniere;
+  const moinsFournie = nouv.achats < act.achats || nouv.inventaires < act.inventaires || nouv.archives < act.archives;
+  sheet(`
+    <h2>♻️ Restaurer cette sauvegarde ?</h2>
+    <div class="s-sub">Cela REMPLACE toutes vos données actuelles.</div>
+    <div class="cat-row" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div class="cat-name" style="font-size:14px">📂 La sauvegarde à restaurer</div>
+      <div class="cat-meta">${lignesResumeSauvegarde(nouv)}</div>
+    </div>
+    <div class="cat-row" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div class="cat-name" style="font-size:14px">📱 Vos données actuelles</div>
+      <div class="cat-meta">${lignesResumeSauvegarde(act)}</div>
+    </div>
+    ${plusAncienne ? `<div class="hint" style="color:var(--ambre);margin:8px 0">⚠️ Cette sauvegarde est plus ANCIENNE que vos données actuelles : vous perdriez ce qui a été fait depuis le ${dateFr(nouv.derniere)}.</div>` : ''}
+    ${moinsFournie ? `<div class="hint" style="color:var(--ambre);margin:8px 0">⚠️ Cette sauvegarde contient MOINS de données que ce que vous avez maintenant (voir les chiffres ci-dessus). Vous perdriez la différence, sauf si vous revenez en arrière ensuite.</div>` : ''}
+    <div class="hint" style="margin:8px 0 12px">Une copie de vos données actuelles est gardée : Plus → Protéger mes données → « Revenir en arrière ».</div>
+    <div class="btn-group">
+      <button class="btn btn-ghost" onclick="closeSheet()">Annuler</button>
+      <button class="btn btn-danger" onclick="executerRestauration()">Oui, restaurer</button>
+    </div>
+  `);
+}
+function executerRestauration(){
+  const data = window._restaurationEnAttente;
+  if(!data) return;
+  if(!garderCopieAvantRestauration('restauration')){
+    toast('Mémoire pleine : copie de sécurité impossible. Sauvegardez d’abord dans un fichier.','err');
+    return;
+  }
+  window._restaurationEnAttente = null;
   DB = data;
+  migrerDB();          // recrée les champs manquants (emprunts, café…) des anciennes sauvegardes
+  sauverDB();
+  closeSheet();
+  toast('Données restaurées ✓ (copie de l’ancien état gardée)');
+  renderApp();
+}
+// Copies de sécurité gardées dans le téléphone : avant restauration, avant mise à jour
+function copiesSecurite(){
+  const res = [];
+  for(const [cle, titre] of [['frigo_avant_restauration','Avant la dernière restauration'], ['frigo_backup_avant_maj','Avant la dernière mise à jour']]){
+    try{
+      const brut = localStorage.getItem(cle);
+      if(!brut) continue;
+      const o = JSON.parse(brut);
+      if(!o || !o.db || !Array.isArray(o.db.categories)) continue;
+      res.push({ cle, titre, date: o.date||'', resume: resumeSauvegarde(o.db) });
+    }catch(e){}
+  }
+  return res;
+}
+function openRetourArriereSheet(){
+  const copies = copiesSecurite();
+  sheet(`
+    <h2>↩️ Revenir en arrière</h2>
+    <div class="s-sub">Copies de sécurité gardées automatiquement dans ce téléphone. Revenir à l’une d’elles remplace vos données actuelles (l’état actuel est gardé aussi : vous pouvez changer d’avis).</div>
+    ${copies.length ? copies.map(c=>`
+      <div class="cat-row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="cat-name" style="font-size:14px">${c.titre}</div>
+        <div class="cat-meta">${c.date ? dateFr(c.date.slice(0,10)) + ' à ' + c.date.slice(11,16) + '<br>' : ''}${lignesResumeSauvegarde(c.resume)}</div>
+        <button class="btn btn-ghost" onclick="revenirCopie('${c.cle}')">Revenir à cette copie</button>
+      </div>`).join('') : `<div class="hint">Aucune copie de sécurité pour le moment.</div>`}
+    <div class="btn-group" style="margin-top:12px"><button class="btn btn-ghost" onclick="closeSheet()">Fermer</button></div>
+  `);
+}
+function revenirCopie(cle){
+  let o = null;
+  try{ o = JSON.parse(localStorage.getItem(cle)); }catch(e){}
+  if(!o || !o.db || !Array.isArray(o.db.categories)){ toast('Copie illisible','err'); return; }
+  if(!garderCopieAvantRestauration('retour en arrière')){ toast('Mémoire pleine : retour impossible','err'); return; }
+  DB = o.db;
   migrerDB();
   sauverDB();
-  toast('Données restaurées ✓');
   closeSheet();
+  toast('Retour en arrière effectué ✓');
   renderApp();
 }
 function openSoldeCafeSheet(){
